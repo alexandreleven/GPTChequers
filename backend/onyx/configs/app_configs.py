@@ -786,6 +786,13 @@ ENTERPRISE_EDITION_ENABLED = (
     os.environ.get("ENABLE_PAID_ENTERPRISE_EDITION_FEATURES", "").lower() == "true"
 )
 
+#####
+# Eleven Edition Configs
+#####
+ELEVEN_EDITION_ENABLED = (
+    os.environ.get("ENABLE_ELEVEN_EDITION_FEATURES", "").lower() == "true"
+)
+
 # Azure Image Configurations
 AZURE_IMAGE_API_VERSION = os.environ.get("AZURE_IMAGE_API_VERSION") or os.environ.get(
     "AZURE_DALLE_API_VERSION"
