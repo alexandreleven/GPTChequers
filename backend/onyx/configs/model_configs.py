@@ -55,6 +55,12 @@ CROSS_ENCODER_RANGE_MIN = 0
 GEN_AI_API_KEY = os.environ.get("GEN_AI_API_KEY")
 GEN_AI_MODEL_VERSION = os.environ.get("GEN_AI_MODEL_VERSION")
 
+# Azure OpenAI configuration for dev (takes precedence over GEN_AI_API_KEY if set)
+GEN_AI_API_KEY_AZURE = os.environ.get("GEN_AI_API_KEY_AZURE")
+GEN_AI_TARGET_URI_AZURE = os.environ.get("GEN_AI_TARGET_URI_AZURE")
+GEN_AI_DEFAULT_MODEL_AZURE = os.environ.get("GEN_AI_DEFAULT_MODEL_AZURE")
+GEN_AI_DISPLAY_NAME_AZURE = os.environ.get("GEN_AI_DISPLAY_NAME_AZURE")
+
 # Override the auto-detection of LLM max context length
 GEN_AI_MAX_TOKENS = int(os.environ.get("GEN_AI_MAX_TOKENS") or 0) or None
 
