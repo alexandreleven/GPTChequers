@@ -67,6 +67,7 @@ uv lock
 uv export --no-emit-project --no-default-groups --no-hashes --extra backend -o backend/requirements/default.txt
 uv export --no-emit-project --no-default-groups --no-hashes --group dev -o backend/requirements/dev.txt
 uv export --no-emit-project --no-default-groups --no-hashes --extra ee -o backend/requirements/ee.txt
+uv export --no-emit-project --no-default-groups --no-hashes --extra eleven -o backend/requirements/eleven.txt
 uv export --no-emit-project --no-default-groups --no-hashes --extra model_server -o backend/requirements/model_server.txt
 ```
 
@@ -87,6 +88,9 @@ uv sync --extra backend --extra dev
 
 # For backend with EE (shared + backend + ee)
 uv sync --extra backend --extra ee
+
+# For backend with Eleven (shared + backend + eleven)
+uv sync --extra backend --extra eleven
 
 # For model server (shared + model_server, NO backend deps!)
 uv sync --extra model_server

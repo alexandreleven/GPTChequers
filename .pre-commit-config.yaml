@@ -52,6 +52,19 @@ repos:
           ]
         files: ^(pyproject\.toml|uv\.lock|backend/requirements/.*\.txt)$
       - id: uv-export
+        name: uv-export eleven.txt
+        args:
+          [
+            "--no-emit-project",
+            "--no-default-groups",
+            "--no-hashes",
+            "--extra",
+            "eleven",
+            "-o",
+            "backend/requirements/eleven.txt",
+          ]
+        files: ^(pyproject\.toml|uv\.lock|backend/requirements/.*\.txt)$
+      - id: uv-export
         name: uv-export model_server.txt
         args:
           [

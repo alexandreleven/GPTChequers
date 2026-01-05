@@ -1264,6 +1264,31 @@ wheels = [
 ]
 
 [[package]]
+name = "elastic-transport"
+version = "8.17.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6a/54/d498a766ac8fa475f931da85a154666cc81a70f8eb4a780bc8e4e934e9ac/elastic_transport-8.17.1.tar.gz", hash = "sha256:5edef32ac864dca8e2f0a613ef63491ee8d6b8cfb52881fa7313ba9290cac6d2", size = 73425, upload-time = "2025-03-13T07:28:30.776Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cf/cd/b71d5bc74cde7fc6fd9b2ff9389890f45d9762cbbbf81dc5e51fd7588c4a/elastic_transport-8.17.1-py3-none-any.whl", hash = "sha256:192718f498f1d10c5e9aa8b9cf32aed405e469a7f0e9d6a8923431dbb2c59fb8", size = 64969, upload-time = "2025-03-13T07:28:29.031Z" },
+]
+
+[[package]]
+name = "elasticsearch"
+version = "8.17.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "elastic-transport" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5b/3d/f563e58f45d23565c0d0316a565638ce312f536b882a3281b8047fb4a58f/elasticsearch-8.17.2.tar.gz", hash = "sha256:ff7f1db8aeefd87ceba4edce3aa4070994582e6cf029d2e67b74e66d634509db", size = 602691, upload-time = "2025-03-04T12:14:27.382Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c0/50/16306f4722ca2fcb64a5875bc1fa9b4d0bcb08c05967f60c23acd4cbb019/elasticsearch-8.17.2-py3-none-any.whl", hash = "sha256:2d058dcddd8f2686cd431a916cdf983f9fb7d211d902834f564ab7df05ba6478", size = 717971, upload-time = "2025-03-04T12:14:23.843Z" },
+]
+
+[[package]]
 name = "email-validator"
 version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3618,6 +3643,9 @@ dev = [
 ee = [
     { name = "posthog" },
 ]
+eleven = [
+    { name = "elasticsearch" },
+]
 model-server = [
     { name = "accelerate" },
     { name = "einops" },
@@ -3655,6 +3683,7 @@ requires-dist = [
     { name = "distributed", marker = "extra == 'backend'", specifier = "==2023.8.1" },
     { name = "dropbox", marker = "extra == 'backend'", specifier = "==12.0.2" },
     { name = "einops", marker = "extra == 'model-server'", specifier = "==0.8.1" },
+    { name = "elasticsearch", marker = "extra == 'eleven'", specifier = "==8.17.2" },
     { name = "exa-py", marker = "extra == 'backend'", specifier = "==1.15.4" },
     { name = "faker", marker = "extra == 'dev'", specifier = "==37.1.0" },
     { name = "fastapi", specifier = "==0.116.1" },
@@ -3789,7 +3818,7 @@ requires-dist = [
     { name = "zizmor", marker = "extra == 'dev'", specifier = "==1.18.0" },
     { name = "zulip", marker = "extra == 'backend'", specifier = "==0.8.2" },
 ]
-provides-extras = ["backend", "dev", "ee", "model-server"]
+provides-extras = ["backend", "dev", "ee", "eleven", "model-server"]
 
 [[package]]
 name = "onyx-backend"
