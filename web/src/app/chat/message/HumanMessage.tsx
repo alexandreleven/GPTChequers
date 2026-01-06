@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { FileDescriptor } from "@/app/chat/interfaces";
 import "katex/dist/katex.min.css";
 import MessageSwitcher from "@/app/chat/message/MessageSwitcher";
@@ -89,22 +89,41 @@ interface HumanMessageProps {
   content: string;
   files?: FileDescriptor[];
 
-  // Message navigation
+  // Message navigation - nodeId for tree position, messageId for editing
+  nodeId: number;
   messageId?: number | null;
   otherMessagesCanSwitchTo?: number[];
-  onMessageSelection?: (messageId: number) => void;
+  onMessageSelection?: (nodeId: number) => void;
 
-  // Editing functionality
-  onEdit?: (editedContent: string) => void;
+  // Editing functionality - takes (editedContent, messageId) to allow stable callback reference
+  onEdit?: (editedContent: string, messageId: number) => void;
 
   // Streaming and generation
   stopGenerating?: () => void;
   disableSwitchingForStreaming?: boolean;
 }
 
-export default function HumanMessage({
+// Memoization comparison - compare by value for primitives, by reference for objects/arrays
+function arePropsEqual(
+  prev: HumanMessageProps,
+  next: HumanMessageProps
+): boolean {
+  return (
+    prev.content === next.content &&
+    prev.nodeId === next.nodeId &&
+    prev.messageId === next.messageId &&
+    prev.files === next.files &&
+    prev.disableSwitchingForStreaming === next.disableSwitchingForStreaming &&
+    prev.otherMessagesCanSwitchTo === next.otherMessagesCanSwitchTo &&
+    prev.onEdit === next.onEdit
+    // Skip: stopGenerating, onMessageSelection (inline function props)
+  );
+}
+
+const HumanMessage = React.memo(function HumanMessage({
   content: initialContent,
   files,
+  nodeId,
   messageId,
   otherMessagesCanSwitchTo,
   onEdit,
@@ -121,9 +140,13 @@ export default function HumanMessage({
   const [isHovered, setIsHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  const currentMessageInd = messageId
-    ? otherMessagesCanSwitchTo?.indexOf(messageId)
-    : undefined;
+  // Use nodeId for switching (finding position in siblings)
+  const indexInSiblings = otherMessagesCanSwitchTo?.indexOf(nodeId);
+  // indexOf returns -1 if not found, treat that as undefined
+  const currentMessageInd =
+    indexInSiblings !== undefined && indexInSiblings !== -1
+      ? indexInSiblings
+      : undefined;
 
   const getPreviousMessage = () => {
     if (
@@ -150,40 +173,44 @@ export default function HumanMessage({
   return (
     <div
       id="onyx-human-message"
-      className="pt-5 pb-1 w-full lg:px-5 flex justify-center -mr-6 relative"
+      className="flex flex-col justify-end pt-5 pb-1 w-full -mr-6 relative"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className={cn("text-user-text max-w-[790px] px-4 w-full")}>
-        <FileDisplay alignBubble files={files || []} />
-        <div className="flex flex-wrap justify-end break-words">
-          {isEditing ? (
-            <MessageEditing
-              content={content}
-              onSubmitEdit={(editedContent) => {
-                onEdit?.(editedContent);
-                setContent(editedContent);
+      <FileDisplay alignBubble files={files || []} />
+      <div className="flex flex-wrap justify-end break-words">
+        {isEditing ? (
+          <MessageEditing
+            content={content}
+            onSubmitEdit={(editedContent) => {
+              // Don't update UI for edits that can't be persisted
+              if (messageId === undefined || messageId === null) {
                 setIsEditing(false);
-              }}
-              onCancelEdit={() => setIsEditing(false)}
-            />
-          ) : typeof content === "string" ? (
-            <>
-              <div className="md:max-w-[25rem] flex basis-[100%] md:basis-auto justify-end md:order-1">
-                <div
-                  className={
-                    "max-w-[25rem] whitespace-break-spaces rounded-t-16 rounded-bl-16 bg-background-tint-02 py-2 px-3"
-                  }
-                >
-                  <Text as="p" mainContentBody>
-                    {content}
-                  </Text>
-                </div>
+                return;
+              }
+              onEdit?.(editedContent, messageId);
+              setContent(editedContent);
+              setIsEditing(false);
+            }}
+            onCancelEdit={() => setIsEditing(false)}
+          />
+        ) : typeof content === "string" ? (
+          <>
+            <div className="md:max-w-[25rem] flex basis-[100%] md:basis-auto justify-end md:order-1">
+              <div
+                className={
+                  "max-w-[25rem] whitespace-break-spaces rounded-t-16 rounded-bl-16 bg-background-tint-02 py-2 px-3"
+                }
+              >
+                <Text as="p" mainContentBody>
+                  {content}
+                </Text>
               </div>
-              {onEdit &&
+            </div>
+            {onEdit &&
               isHovered &&
               !isEditing &&
-              (!files || files.length === 0) ? (
+              (!files || files.length === 0) && (
                 <div className="flex flex-row gap-1 p-1">
                   <CopyIconButton
                     getCopyText={() => content}
@@ -201,61 +228,60 @@ export default function HumanMessage({
                     data-testid="HumanMessage/edit-button"
                   />
                 </div>
-              ) : (
-                <div className="w-7 h-10" />
               )}
-            </>
-          ) : (
-            <>
-              {onEdit &&
-              isHovered &&
-              !isEditing &&
-              (!files || files.length === 0) ? (
-                <div className="my-auto">
-                  <IconButton
-                    icon={SvgEdit}
-                    onClick={() => {
-                      setIsEditing(true);
-                      setIsHovered(false);
-                    }}
-                    tertiary
-                    tooltip="Edit"
-                  />
-                </div>
-              ) : (
-                <div className="h-[27px]" />
-              )}
-              <div className="ml-auto rounded-lg p-1">{content}</div>
-            </>
-          )}
-          <div className="md:min-w-[100%] flex justify-end order-1 mt-1">
-            {currentMessageInd !== undefined &&
-              onMessageSelection &&
-              otherMessagesCanSwitchTo &&
-              otherMessagesCanSwitchTo.length > 1 && (
-                <MessageSwitcher
-                  disableForStreaming={disableSwitchingForStreaming}
-                  currentPage={currentMessageInd + 1}
-                  totalPages={otherMessagesCanSwitchTo.length}
-                  handlePrevious={() => {
-                    stopGenerating();
-                    const prevMessage = getPreviousMessage();
-                    if (prevMessage !== undefined) {
-                      onMessageSelection(prevMessage);
-                    }
+          </>
+        ) : (
+          <>
+            {onEdit &&
+            isHovered &&
+            !isEditing &&
+            (!files || files.length === 0) ? (
+              <div className="my-auto">
+                <IconButton
+                  icon={SvgEdit}
+                  onClick={() => {
+                    setIsEditing(true);
+                    setIsHovered(false);
                   }}
-                  handleNext={() => {
-                    stopGenerating();
-                    const nextMessage = getNextMessage();
-                    if (nextMessage !== undefined) {
-                      onMessageSelection(nextMessage);
-                    }
-                  }}
+                  tertiary
+                  tooltip="Edit"
                 />
-              )}
-          </div>
+              </div>
+            ) : (
+              <div className="h-[27px]" />
+            )}
+            <div className="ml-auto rounded-lg p-1">{content}</div>
+          </>
+        )}
+        <div className="md:min-w-[100%] flex justify-end order-1 mt-1">
+          {currentMessageInd !== undefined &&
+            onMessageSelection &&
+            otherMessagesCanSwitchTo &&
+            otherMessagesCanSwitchTo.length > 1 && (
+              <MessageSwitcher
+                disableForStreaming={disableSwitchingForStreaming}
+                currentPage={currentMessageInd + 1}
+                totalPages={otherMessagesCanSwitchTo.length}
+                handlePrevious={() => {
+                  stopGenerating();
+                  const prevMessage = getPreviousMessage();
+                  if (prevMessage !== undefined) {
+                    onMessageSelection(prevMessage);
+                  }
+                }}
+                handleNext={() => {
+                  stopGenerating();
+                  const nextMessage = getNextMessage();
+                  if (nextMessage !== undefined) {
+                    onMessageSelection(nextMessage);
+                  }
+                }}
+              />
+            )}
         </div>
       </div>
     </div>
   );
-}
+}, arePropsEqual);
+
+export default HumanMessage;
