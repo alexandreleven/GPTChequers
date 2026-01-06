@@ -2,6 +2,7 @@ import httpx
 
 from eleven.onyx.configs.app_configs import DOCUMENT_INDEX_TYPE
 from eleven.onyx.configs.constants import DocumentIndexType
+from eleven.onyx.document_index.elasticsearch.index import ElasticsearchIndex
 from onyx.db.models import SearchSettings
 from onyx.document_index.interfaces import DocumentIndex
 from onyx.document_index.vespa.index import VespaIndex
@@ -27,7 +28,13 @@ def _get_default_document_index(
     # Return the appropriate index based on the configured document index type
     if DOCUMENT_INDEX_TYPE == DocumentIndexType.ELASTICSEARCH.value:
         # httpx_client is not used by ElasticsearchIndex
-        raise NotImplementedError("Elasticsearch is not implemented yet")
+        return ElasticsearchIndex(
+            index_name=search_settings.index_name,
+            secondary_index_name=secondary_index_name,
+            large_chunks_enabled=search_settings.large_chunks_enabled,
+            secondary_large_chunks_enabled=secondary_large_chunks_enabled,
+            multitenant=MULTI_TENANT,
+        )
 
     elif DOCUMENT_INDEX_TYPE == DocumentIndexType.COMBINED.value:
         return VespaIndex(
