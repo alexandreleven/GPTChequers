@@ -40,7 +40,7 @@ jobs:
       - name: Fetch upstream tag
         if: steps.detect.outputs.tag != ''
         run: |
-          git remote add upstream https://github.com/ORG/REPO.git
+          git remote add upstream https://github.com/onyx-dot-app/onyx.git
           git fetch upstream refs/tags/${{ steps.detect.outputs.tag }}:refs/tags/${{ steps.detect.outputs.tag }}
 
       - name: Create branch from tag
