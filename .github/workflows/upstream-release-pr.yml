@@ -6,7 +6,6 @@ on:
 # Permissions needed to push branches and create PRs using GITHUB_TOKEN
 permissions:
   contents: write
-  workflows: write
 
 jobs:
   sync-upstream-release:
