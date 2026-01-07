@@ -14,12 +14,15 @@ from onyx.context.search.models import InferenceChunkUncleaned
 from onyx.document_index.interfaces import VespaChunkRequest
 from onyx.document_index.vespa_constants import BLURB
 from onyx.document_index.vespa_constants import BOOST
+from onyx.document_index.vespa_constants import CHUNK_CONTEXT
 from onyx.document_index.vespa_constants import CHUNK_ID
 from onyx.document_index.vespa_constants import CONTENT
 from onyx.document_index.vespa_constants import CONTENT_SUMMARY
+from onyx.document_index.vespa_constants import DOC_SUMMARY
 from onyx.document_index.vespa_constants import DOC_UPDATED_AT
 from onyx.document_index.vespa_constants import DOCUMENT_ID
 from onyx.document_index.vespa_constants import HIDDEN
+from onyx.document_index.vespa_constants import IMAGE_FILE_NAME
 from onyx.document_index.vespa_constants import LARGE_CHUNK_REFERENCE_IDS
 from onyx.document_index.vespa_constants import METADATA
 from onyx.document_index.vespa_constants import METADATA_SUFFIX
@@ -195,6 +198,8 @@ def _elasticsearch_hit_to_inference_chunk(
         section_continuation=fields[SECTION_CONTINUATION],
         document_id=fields[DOCUMENT_ID],
         source_type=fields[SOURCE_TYPE],
+        # Still called `image_file_name` for backwards compatibility with Vespa
+        image_file_id=fields.get(IMAGE_FILE_NAME),
         title=fields.get(TITLE),
         semantic_identifier=fields[SEMANTIC_IDENTIFIER],
         boost=fields.get(BOOST, 1),
@@ -206,6 +211,8 @@ def _elasticsearch_hit_to_inference_chunk(
         large_chunk_reference_ids=fields.get(LARGE_CHUNK_REFERENCE_IDS, []),
         metadata=metadata,
         metadata_suffix=fields.get(METADATA_SUFFIX),
+        doc_summary=fields.get(DOC_SUMMARY, ""),
+        chunk_context=fields.get(CHUNK_CONTEXT, ""),
         match_highlights=match_highlights,
         updated_at=updated_at,
     )

@@ -35,6 +35,9 @@ SECONDARY_OWNERS = "secondary_owners"
 RECENCY_BIAS = "recency_bias"
 HIDDEN = "hidden"
 CONTENT_SUMMARY = "content_summary"  # For highlighting matching keywords/sections
+IMAGE_FILE_NAME = "image_file_name"  # For backwards compatibility with Vespa
+DOC_SUMMARY = "doc_summary"  # Document-level summary for contextual RAG
+CHUNK_CONTEXT = "chunk_context"  # Chunk-level context for contextual RAG
 
 # Elasticsearch index settings
 INDEX_SETTINGS = {
@@ -97,6 +100,9 @@ MAPPING_TEMPLATE = {
             HIDDEN: {"type": "boolean"},
             CONTENT_SUMMARY: {"type": "text"},
             SKIP_TITLE_EMBEDDING: {"type": "boolean"},
+            IMAGE_FILE_NAME: {"type": "keyword"},
+            DOC_SUMMARY: {"type": "text"},
+            CHUNK_CONTEXT: {"type": "text"},
         }
     }
 }

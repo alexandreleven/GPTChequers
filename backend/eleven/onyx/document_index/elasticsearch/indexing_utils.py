@@ -14,10 +14,16 @@ from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import (
 )
 from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import BLURB
 from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import BOOST
+from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import (
+    CHUNK_CONTEXT,
+)
 from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import CHUNK_ID
 from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import CONTENT
 from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import (
     CONTENT_SUMMARY,
+)
+from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import (
+    DOC_SUMMARY,
 )
 from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import (
     DOC_UPDATED_AT,
@@ -28,6 +34,9 @@ from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import (
 )
 from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import EMBEDDINGS
 from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import HIDDEN
+from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import (
+    IMAGE_FILE_NAME,
+)
 from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import (
     LARGE_CHUNK_REFERENCE_IDS,
 )
@@ -179,6 +188,11 @@ def prepare_elasticsearch_document(
                 else ""
             ),
             METADATA_SUFFIX: chunk.metadata_suffix_keyword,
+            IMAGE_FILE_NAME: chunk.image_file_id,
+            DOC_SUMMARY: chunk.doc_summary if hasattr(chunk, "doc_summary") else "",
+            CHUNK_CONTEXT: (
+                chunk.chunk_context if hasattr(chunk, "chunk_context") else ""
+            ),
             EMBEDDINGS: chunk.embeddings.full_embedding,
             TITLE_EMBEDDING: chunk.title_embedding,
             DOC_UPDATED_AT: _elasticsearch_get_updated_at_attribute(

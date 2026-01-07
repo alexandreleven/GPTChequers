@@ -58,8 +58,10 @@ from eleven.onyx.document_index.elasticsearch.shared_utils.elasticsearch_request
 from eleven.onyx.document_index.elasticsearch.utils import (
     get_elasticsearch_client,
 )
+from onyx.configs.chat_configs import TITLE_CONTENT_RATIO
 from onyx.context.search.models import IndexFilters
 from onyx.context.search.models import InferenceChunkUncleaned
+from onyx.context.search.models import QueryExpansionType
 from onyx.db.enums import EmbeddingPrecision
 from onyx.document_index.document_index_utils import (
     get_document_chunk_ids,
@@ -473,7 +475,9 @@ class ElasticsearchIndex(DocumentIndex):
         hybrid_alpha: float,
         time_decay_multiplier: float,
         num_to_retrieve: int,
+        ranking_profile_type: QueryExpansionType,
         offset: int = 0,
+        title_content_ratio: float | None = TITLE_CONTENT_RATIO,
         user_id: UUID = None,
         db_session: Session = None,
     ) -> list[InferenceChunkUncleaned]:
@@ -484,46 +488,65 @@ class ElasticsearchIndex(DocumentIndex):
         2. Vector similarity using KNN search
         3. Results combined using Reciprocal Rank Fusion (RRF)
 
+        Parameters:
+        - ranking_profile_type: KEYWORD favors exact matches, SEMANTIC favors semantic similarity
+        - title_content_ratio: Weight given to title (0-1), with 1-ratio given to content
+        - hybrid_alpha: Weight for vector similarity (1.0) vs BM25 (0.0)
+
         Key differences from Vespa:
         - Elasticsearch doesn't support mini-chunks, so we only use the main embedding
         - We use RRF ranking instead of a custom function score
         """
         # Build filter clauses for Elasticsearch including SharePoint filters
-        # The SharePoint filters restrict results based on the user's access permissions
-        # This ensures users only see SharePoint documents from libraries they have access to
-        # The user_id and db_session are used to retrieve the user's SharePoint groups
         filter_clauses = build_elastic_filters(
             filters, user_id=user_id, db_session=db_session
         )
 
-        # filter_clauses = [
-        #     {"term": {"metadata.company": "inke"}},
-        #     {"term": {"metadata.document_type": "ppt"}},
-        #     {"term": {"hidden": False}},
-        #     # {"terms": {"access_control_list.value": ["PUBLIC", "user_email:vincent.mateos@eleven-strategy.com"]}},
-        #     # {
-        #     #     "nested": {
-        #     #         "path": "access_control_list",
-        #     #         "query": {
-        #     #             "terms": {
-        #     #                 "access_control_list.value": [
-        #     #                     "PUBLIC",
-        #     #                     "user_email:vincent.mateos@eleven-strategy.com",
-        #     #                 ]
-        #     #             }
-        #     #         },
-        #     #     }
-        #     # },
-        # ]
-
         # Use final_keywords if provided, otherwise use the original query
         final_query = " ".join(final_keywords) if final_keywords else query
 
-        # Build the complete query directly
-        # The bool query handles the text search part
+        # Set default title_content_ratio if not provided
+        if title_content_ratio is None:
+            title_content_ratio = TITLE_CONTENT_RATIO
+
+        # Calculate boost values for title and content based on title_content_ratio
+        # title_content_ratio of 0.10 means 10% weight on title, 90% on content
+        title_boost = (
+            title_content_ratio * 10
+        )  # Scale up for Elasticsearch boost values
+        content_boost = (1 - title_content_ratio) * 10
+
+        # Adjust boosts based on ranking_profile_type
+        # KEYWORD: boost exact matches more, reduce semantic weight
+        # SEMANTIC: boost semantic similarity more
+        if ranking_profile_type == QueryExpansionType.KEYWORD:
+            # For keyword queries, we want more emphasis on exact text matches
+            # Increase text match weight, decrease vector weight
+            text_match_boost = 1.5
+            logger.debug("Using KEYWORD ranking profile with boosted text matching")
+        else:  # SEMANTIC
+            # For semantic queries, we want balanced or more vector-focused search
+            text_match_boost = 1.0
+            logger.debug("Using SEMANTIC ranking profile with balanced search")
+
+        # Build a multi_match query that searches across title and content with appropriate weights
+        # This respects the title_content_ratio parameter
+        text_query = {
+            "multi_match": {
+                "query": final_query,
+                "fields": [
+                    f"semantic_identifier^{title_boost * text_match_boost}",  # Title field
+                    f"content^{content_boost * text_match_boost}",  # Content field
+                ],
+                "type": "best_fields",
+                "tie_breaker": 0.3,
+            }
+        }
+
+        # Build the complete query
         query_obj = {
             "bool": {
-                "must": [{"match": {"text": final_query}}],
+                "must": [text_query],
                 "filter": {"bool": {"must": filter_clauses}},
             }
         }
@@ -540,19 +563,44 @@ class ElasticsearchIndex(DocumentIndex):
         }
 
         # Add vector search parameters if we have an embedding
+        # The vector search weight is controlled by hybrid_alpha and ranking_profile_type
         if query_embedding is not None and len(query_embedding) > 0:
+            # Adjust num_candidates based on ranking_profile_type
+            # KEYWORD: fewer candidates (faster, more focused on text)
+            # SEMANTIC: more candidates (better semantic coverage)
+            if ranking_profile_type == QueryExpansionType.KEYWORD:
+                effective_num_candidates = min(NUM_CANDIDATES, num_to_retrieve * 5)
+            else:  # SEMANTIC
+                effective_num_candidates = NUM_CANDIDATES
+
             params["knn"] = {
                 "field": EMBEDDINGS,
                 "query_vector": query_embedding,
                 "k": num_to_retrieve,
-                "num_candidates": NUM_CANDIDATES,
+                "num_candidates": effective_num_candidates,
                 "filter": {
                     "bool": {
                         "must": filter_clauses,
                     }
                 },
             }
-            params["rank"] = {"rrf": {"rank_window_size": num_to_retrieve}}
+
+            # RRF (Reciprocal Rank Fusion) combines text and vector results
+            # The rank_constant can be adjusted based on ranking_profile_type
+            # Higher rank_constant = more weight to lower-ranked results
+            if ranking_profile_type == QueryExpansionType.KEYWORD:
+                # Lower rank_constant for keyword: top matches matter more
+                rrf_rank_constant = 20
+            else:  # SEMANTIC
+                # Higher rank_constant for semantic: give more chance to diverse results
+                rrf_rank_constant = 60
+
+            params["rank"] = {
+                "rrf": {
+                    "rank_window_size": num_to_retrieve * 2,
+                    "rank_constant": rrf_rank_constant,
+                }
+            }
 
         return query_elasticsearch(params)
 
