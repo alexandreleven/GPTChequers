@@ -3,8 +3,12 @@ import httpx
 from eleven.onyx.configs.app_configs import DOCUMENT_INDEX_TYPE
 from eleven.onyx.configs.constants import DocumentIndexType
 from eleven.onyx.document_index.elasticsearch.index import ElasticsearchIndex
+from onyx.configs.app_configs import ENABLE_OPENSEARCH_FOR_ONYX
 from onyx.db.models import SearchSettings
 from onyx.document_index.interfaces import DocumentIndex
+from onyx.document_index.opensearch.opensearch_document_index import (
+    OpenSearchOldDocumentIndex,
+)
 from onyx.document_index.vespa.index import VespaIndex
 from shared_configs.configs import MULTI_TENANT
 
@@ -34,6 +38,16 @@ def _get_default_document_index(
             large_chunks_enabled=search_settings.large_chunks_enabled,
             secondary_large_chunks_enabled=secondary_large_chunks_enabled,
             multitenant=MULTI_TENANT,
+        )
+
+    if ENABLE_OPENSEARCH_FOR_ONYX:
+        return OpenSearchOldDocumentIndex(
+            index_name=search_settings.index_name,
+            secondary_index_name=secondary_index_name,
+            large_chunks_enabled=search_settings.large_chunks_enabled,
+            secondary_large_chunks_enabled=secondary_large_chunks_enabled,
+            multitenant=MULTI_TENANT,
+            httpx_client=httpx_client,
         )
 
     elif DOCUMENT_INDEX_TYPE == DocumentIndexType.COMBINED.value:
