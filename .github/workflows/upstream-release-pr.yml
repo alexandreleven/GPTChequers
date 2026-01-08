@@ -79,7 +79,7 @@ jobs:
         with:
           token: ${{ secrets.PR_OPENER }}
           base: main
-          head: upstream/${{ steps.detect.outputs.tag }}
+          branch: upstream/${{ steps.detect.outputs.tag }}
           title: "chore: sync upstream release ${{ steps.detect.outputs.tag }}"
           body: |
             This PR syncs upstream release **${{ steps.detect.outputs.tag }}**.
