@@ -40,6 +40,9 @@ from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import (
 from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import (
     TITLE_EMBEDDING,
 )
+from eleven.onyx.document_index.elasticsearch.elasticsearch_constants import (
+    USER_PROJECT,
+)
 from eleven.onyx.document_index.elasticsearch.indexing_utils import (
     batch_index_elasticsearch_chunks,
 )
@@ -75,6 +78,7 @@ from onyx.document_index.interfaces import MinimalDocumentIndexingInfo
 from onyx.document_index.interfaces import UpdateRequest
 from onyx.document_index.interfaces import VespaChunkRequest
 from onyx.document_index.interfaces import VespaDocumentFields
+from onyx.document_index.interfaces import VespaDocumentUserFields
 from onyx.utils.batching import batch_generator
 from onyx.utils.logger import setup_logger
 from shared_configs.model_server_models import Embedding
@@ -248,42 +252,48 @@ class ElasticsearchIndex(DocumentIndex):
 
     def _prepare_update_body(
         self,
-        fields: VespaDocumentFields,
-    ) -> int:
+        fields: VespaDocumentFields | None,
+        user_fields: VespaDocumentUserFields | None,
+    ) -> dict:
         """Prepare the update body for document chunk updates"""
         update_body = {}
 
-        if fields.boost is not None:
-            update_body[BOOST] = fields.boost
+        if fields is not None:
+            if fields.boost is not None:
+                update_body[BOOST] = fields.boost
 
-        # Format document sets as nested objects with value and weight
-        if fields.document_sets is not None:
-            document_sets = []
-            if fields.document_sets:  # Check if not empty
-                for doc_set in fields.document_sets:
-                    document_sets.append(
-                        {"value": doc_set, "weight": 1}  # Default weight
-                    )
-            update_body[DOCUMENT_SETS] = document_sets
-
-        # Format access control list as nested objects with value and weight
-        if fields.access is not None:
-            access_control_list = []
-            if fields.access:  # Check if not None
-                acl_items = fields.access.to_acl()
-                if acl_items:  # Check if not empty
-                    for acl_item in acl_items:
-                        access_control_list.append(
-                            {"value": acl_item, "weight": 1}  # Default weight
+            # Format document sets as nested objects with value and weight
+            if fields.document_sets is not None:
+                document_sets = []
+                if fields.document_sets:  # Check if not empty
+                    for doc_set in fields.document_sets:
+                        document_sets.append(
+                            {"value": doc_set, "weight": 1}  # Default weight
                         )
-            update_body[ACCESS_CONTROL_LIST] = access_control_list
+                update_body[DOCUMENT_SETS] = document_sets
 
-        if fields.hidden is not None:
-            update_body[HIDDEN] = fields.hidden
+            # Format access control list as nested objects with value and weight
+            if fields.access is not None:
+                access_control_list = []
+                if fields.access:  # Check if not None
+                    acl_items = fields.access.to_acl()
+                    if acl_items:  # Check if not empty
+                        for acl_item in acl_items:
+                            access_control_list.append(
+                                {"value": acl_item, "weight": 1}  # Default weight
+                            )
+                update_body[ACCESS_CONTROL_LIST] = access_control_list
+
+            if fields.hidden is not None:
+                update_body[HIDDEN] = fields.hidden
+
+        if user_fields is not None:
+            if user_fields.user_projects is not None:
+                update_body[USER_PROJECT] = user_fields.user_projects
 
         if not update_body:
             logger.error("Update request received but nothing to update.")
-            return
+            return {}
 
         return update_body
 
@@ -291,16 +301,22 @@ class ElasticsearchIndex(DocumentIndex):
         self,
         doc_id: str,
         *,
+        tenant_id: str,
         chunk_count: int | None,
-        tenant_id: str | None,
-        fields: VespaDocumentFields,
-    ) -> int:
+        fields: VespaDocumentFields | None,
+        user_fields: VespaDocumentUserFields | None,
+    ) -> None:
         """Update a single document's fields we do not follow the same logic as Vespa"""
         # NOTE we choose to use bulk update as we assume only few chunks would be updated each time,
         # a more scalable approach could be to use the update by query API
-        doc_chunk_count = 0
 
-        update_body = self._prepare_update_body(fields)
+        if fields is None and user_fields is None:
+            logger.warning(
+                f"Tried to update document {doc_id} with no updated fields or user fields."
+            )
+            return
+
+        update_body = self._prepare_update_body(fields, user_fields)
 
         doc_chunk_ids = []
         for (
@@ -323,8 +339,6 @@ class ElasticsearchIndex(DocumentIndex):
                 )
             )
 
-            doc_chunk_count += len(doc_chunk_ids)
-
         if update_body:
             actions = [
                 {
@@ -344,31 +358,28 @@ class ElasticsearchIndex(DocumentIndex):
             except Exception as e:
                 logger.error(f"Bulk update failed: {str(e)}")
 
-        return doc_chunk_count
-
-    def update(
-        self, update_requests: list[UpdateRequest], *, tenant_id: str | None
-    ) -> None:
+    def update(self, update_requests: list[UpdateRequest], *, tenant_id: str) -> None:
         """Update multiple documents"""
         for request in update_requests:
             for doc_info in request.minimal_document_indexing_info:
                 self.update_single(
                     doc_info.doc_id,
-                    chunk_count=None,
                     tenant_id=tenant_id,
+                    chunk_count=None,
                     fields=VespaDocumentFields(
                         boost=request.boost,
                         hidden=request.hidden,
                         document_sets=request.document_sets,
                         access=request.access,
                     ),
+                    user_fields=None,
                 )
 
     def delete_single(
         self,
         doc_id: str,
         *,
-        tenant_id: str | None,
+        tenant_id: str,
         chunk_count: int | None,
     ) -> int:
         """Delete a single document's chunks"""

@@ -34,6 +34,7 @@ PRIMARY_OWNERS = "primary_owners"
 SECONDARY_OWNERS = "secondary_owners"
 RECENCY_BIAS = "recency_bias"
 HIDDEN = "hidden"
+USER_PROJECT = "user_project"  # User-specific projects for access control
 CONTENT_SUMMARY = "content_summary"  # For highlighting matching keywords/sections
 IMAGE_FILE_NAME = "image_file_name"  # For backwards compatibility with Vespa
 DOC_SUMMARY = "doc_summary"  # Document-level summary for contextual RAG
@@ -98,6 +99,7 @@ MAPPING_TEMPLATE = {
             SECONDARY_OWNERS: {"type": "keyword"},
             RECENCY_BIAS: {"type": "float"},
             HIDDEN: {"type": "boolean"},
+            USER_PROJECT: {"type": "integer"},
             CONTENT_SUMMARY: {"type": "text"},
             SKIP_TITLE_EMBEDDING: {"type": "boolean"},
             IMAGE_FILE_NAME: {"type": "keyword"},
