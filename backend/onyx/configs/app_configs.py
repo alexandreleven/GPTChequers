@@ -120,6 +120,14 @@ VALID_EMAIL_DOMAINS = (
     if _VALID_EMAIL_DOMAINS_STR
     else []
 )
+
+# Disposable email blocking - blocks temporary/throwaway email addresses
+# Set to empty string to disable disposable email blocking
+DISPOSABLE_EMAIL_DOMAINS_URL = os.environ.get(
+    "DISPOSABLE_EMAIL_DOMAINS_URL",
+    "https://disposable.github.io/disposable-email-domains/domains.json",
+)
+
 # OAuth Login Flow
 # Used for both Google OAuth2 and OIDC flows
 OAUTH_CLIENT_ID = (
@@ -191,6 +199,10 @@ OPENSEARCH_HOST = os.environ.get("OPENSEARCH_HOST") or "localhost"
 OPENSEARCH_REST_API_PORT = int(os.environ.get("OPENSEARCH_REST_API_PORT") or 9200)
 OPENSEARCH_ADMIN_USERNAME = os.environ.get("OPENSEARCH_ADMIN_USERNAME", "admin")
 OPENSEARCH_ADMIN_PASSWORD = os.environ.get("OPENSEARCH_ADMIN_PASSWORD", "")
+
+ENABLE_OPENSEARCH_FOR_ONYX = (
+    os.environ.get("ENABLE_OPENSEARCH_FOR_ONYX", "").lower() == "true"
+)
 
 VESPA_HOST = os.environ.get("VESPA_HOST") or "localhost"
 # NOTE: this is used if and only if the vespa config server is accessible via a
@@ -807,6 +819,10 @@ ELEVEN_EDITION_ENABLED = (
     os.environ.get("ENABLE_ELEVEN_EDITION_FEATURES", "").lower() == "true"
 )
 
+# Image Generation Configuration (DEPRECATED)
+# These environment variables will be deprecated soon.
+# To configure image generation, please visit the Image Generation page in the Admin Panel.
+#####
 # Azure Image Configurations
 AZURE_IMAGE_API_VERSION = os.environ.get("AZURE_IMAGE_API_VERSION") or os.environ.get(
     "AZURE_DALLE_API_VERSION"
