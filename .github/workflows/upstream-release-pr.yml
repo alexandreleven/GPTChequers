@@ -3,7 +3,7 @@ name: Sync upstream release
 on:
   workflow_dispatch:
 
-# Permissions needed to push branches and create PRs using GITHUB_TOKEN
+# Permissions needed to push branches and create PRs using PR_OPENER
 permissions:
   contents: write
 
@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Fetch all history to allow tags and branch creation
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PR_OPENER }}
 
       # Step 2: Detect new upstream tag greater than local max tag
       - name: Detect new upstream tag
@@ -77,7 +77,7 @@ jobs:
         if: steps.detect.outputs.tag != ''
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PR_OPENER }}
           base: main
           head: upstream/${{ steps.detect.outputs.tag }}
           title: "chore: sync upstream release ${{ steps.detect.outputs.tag }}"
