@@ -4,6 +4,7 @@ import inspect
 from typing import Any
 from typing import TypeVar
 
+from onyx.configs.app_configs import ELEVEN_EDITION_ENABLED
 from onyx.configs.app_configs import ENTERPRISE_EDITION_ENABLED
 from onyx.utils.logger import setup_logger
 
@@ -13,12 +14,19 @@ logger = setup_logger()
 class OnyxVersion:
     def __init__(self) -> None:
         self._is_ee = False
+        self._is_eleven = False
 
     def set_ee(self) -> None:
         self._is_ee = True
 
+    def set_eleven(self) -> None:
+        self._is_eleven = True
+
     def is_ee_version(self) -> bool:
         return self._is_ee
+
+    def is_eleven_version(self) -> bool:
+        return self._is_eleven
 
 
 global_version = OnyxVersion()
@@ -28,6 +36,12 @@ def set_is_ee_based_on_env_variable() -> None:
     if ENTERPRISE_EDITION_ENABLED and not global_version.is_ee_version():
         logger.notice("Enterprise Edition enabled")
         global_version.set_ee()
+
+
+def set_is_eleven_based_on_env_variable() -> None:
+    if ELEVEN_EDITION_ENABLED and not global_version.is_eleven_version():
+        logger.notice("Eleven Edition enabled")
+        global_version.set_eleven()
 
 
 @functools.lru_cache(maxsize=128)
@@ -56,8 +70,15 @@ def fetch_versioned_implementation(module: str, attribute: str) -> Any:
     """
     logger.debug("Fetching versioned implementation for %s.%s", module, attribute)
     is_ee = global_version.is_ee_version()
+    is_eleven = global_version.is_eleven_version()
 
-    module_full = f"ee.{module}" if is_ee else module
+    if is_eleven:
+        module_full = f"eleven.{module}"
+    elif is_ee:
+        module_full = f"ee.{module}"
+    else:
+        module_full = module
+
     try:
         return getattr(importlib.import_module(module_full), attribute)
     except ModuleNotFoundError as e:
@@ -67,6 +88,13 @@ def fetch_versioned_implementation(module: str, attribute: str) -> Any:
             attribute,
             e,
         )
+
+        if is_eleven:
+            if "eleven.onyx" not in str(e):
+                raise e
+            # Use the MIT version as a fallback, this allows us to develop MIT
+            # versions independently and later add additional Eleven functionality
+            return getattr(importlib.import_module(module), attribute)
 
         if is_ee:
             if "ee.onyx" not in str(e):

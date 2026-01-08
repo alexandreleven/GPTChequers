@@ -813,6 +813,12 @@ ENTERPRISE_EDITION_ENABLED = (
 )
 
 #####
+# Eleven Edition Configs
+#####
+ELEVEN_EDITION_ENABLED = (
+    os.environ.get("ENABLE_ELEVEN_EDITION_FEATURES", "").lower() == "true"
+)
+
 # Image Generation Configuration (DEPRECATED)
 # These environment variables will be deprecated soon.
 # To configure image generation, please visit the Image Generation page in the Admin Panel.

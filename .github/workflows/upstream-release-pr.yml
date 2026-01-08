@@ -1,0 +1,91 @@
+name: Sync upstream release
+
+on:
+  workflow_dispatch:
+
+# Permissions needed to push branches and create PRs using PR_OPENER
+permissions:
+  contents: write
+
+jobs:
+  sync-upstream-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the fork repository
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history to allow tags and branch creation
+          token: ${{ secrets.PR_OPENER }}
+
+      # Step 2: Detect new upstream tag greater than local max tag
+      - name: Detect new upstream tag
+        id: detect
+        run: |
+          UPSTREAM_REPO="https://github.com/onyx-dot-app/onyx.git"
+
+          # Get all upstream tags matching vX.Y.Z pattern, sorted in ascending order
+          UPSTREAM_TAGS=$(git ls-remote --tags "$UPSTREAM_REPO" \
+            | awk '{print $2}' \
+            | sed 's#refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V)
+
+          # Get the highest local tag matching vX.Y.Z
+          LOCAL_MAX_TAG=$(git tag \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -n 1)
+
+          echo "Local max tag: $LOCAL_MAX_TAG"
+
+          # Filter upstream tags that are strictly greater than LOCAL_MAX_TAG
+          NEW_TAG=$(echo "$UPSTREAM_TAGS" \
+            | awk -v local="$LOCAL_MAX_TAG" 'BEGIN{split(local,a,".");} 
+              {
+                split($0,b,"."); 
+                if (b[1]>a[1] || (b[1]==a[1] && b[2]>a[2]) || (b[1]==a[1] && b[2]==a[2] && b[3]>a[3])) 
+                  print $0
+              }' \
+            | head -n 1)
+
+          if [ -z "$NEW_TAG" ]; then
+            echo "No new upstream tag greater than $LOCAL_MAX_TAG"
+            exit 0
+          fi
+
+          echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+      # Step 3: Fetch the specific upstream tag
+      - name: Fetch upstream tag
+        if: steps.detect.outputs.tag != ''
+        run: |
+          git remote add upstream https://github.com/onyx-dot-app/onyx.git
+          git fetch upstream refs/tags/${{ steps.detect.outputs.tag }}:refs/tags/${{ steps.detect.outputs.tag }}
+
+      # Step 4: Create a branch from the upstream tag and push to fork
+      - name: Create branch from tag
+        if: steps.detect.outputs.tag != ''
+        run: |
+          BRANCH="upstream/${{ steps.detect.outputs.tag }}"
+          git checkout -B "$BRANCH" "refs/tags/${{ steps.detect.outputs.tag }}"
+          git push origin "$BRANCH" --force
+
+      # Step 5: Open a Pull Request from the new branch to main
+      - name: Open Pull Request
+        if: steps.detect.outputs.tag != ''
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.PR_OPENER }}
+          base: main
+          branch: upstream/${{ steps.detect.outputs.tag }}
+          title: "chore: sync upstream release ${{ steps.detect.outputs.tag }}"
+          body: |
+            This PR syncs upstream release **${{ steps.detect.outputs.tag }}**.
+            - Source: upstream tag
+            - Pattern: vX.Y.Z
+            - Generated automatically by CI
+          labels: |
+            upstream
+            release

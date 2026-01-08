@@ -142,6 +142,7 @@ from onyx.utils.telemetry import RecordType
 from onyx.utils.variable_functionality import fetch_versioned_implementation
 from onyx.utils.variable_functionality import global_version
 from onyx.utils.variable_functionality import set_is_ee_based_on_env_variable
+from onyx.utils.variable_functionality import set_is_eleven_based_on_env_variable
 from shared_configs.configs import CORS_ALLOWED_ORIGIN
 from shared_configs.configs import MULTI_TENANT
 from shared_configs.configs import POSTGRES_DEFAULT_SCHEMA
@@ -568,6 +569,7 @@ def get_application(lifespan_override: Lifespan | None = None) -> FastAPI:
 # NOTE: needs to be outside of the `if __name__ == "__main__"` block so that the
 # app is exportable
 set_is_ee_based_on_env_variable()
+set_is_eleven_based_on_env_variable()
 app = fetch_versioned_implementation(module="onyx.main", attribute="get_application")
 
 
