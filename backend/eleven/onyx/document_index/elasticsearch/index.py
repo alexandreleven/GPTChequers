@@ -10,6 +10,7 @@ from eleven.onyx.document_index.elasticsearch.chunk_retrieval import (
     individual_id_retrieval,
 )
 from eleven.onyx.document_index.elasticsearch.chunk_retrieval import query_elasticsearch
+from eleven.onyx.document_index.elasticsearch.chunk_utils import cleanup_chunks
 from eleven.onyx.document_index.elasticsearch.deletion import (
     delete_elasticsearch_chunks_bulk,
 )
@@ -63,7 +64,7 @@ from eleven.onyx.document_index.elasticsearch.utils import (
 )
 from onyx.configs.chat_configs import TITLE_CONTENT_RATIO
 from onyx.context.search.models import IndexFilters
-from onyx.context.search.models import InferenceChunkUncleaned
+from onyx.context.search.models import InferenceChunk
 from onyx.context.search.models import QueryExpansionType
 from onyx.db.enums import EmbeddingPrecision
 from onyx.document_index.document_index_utils import (
@@ -79,6 +80,7 @@ from onyx.document_index.interfaces import UpdateRequest
 from onyx.document_index.interfaces import VespaChunkRequest
 from onyx.document_index.interfaces import VespaDocumentFields
 from onyx.document_index.interfaces import VespaDocumentUserFields
+from onyx.document_index.interfaces_new import TenantState
 from onyx.utils.batching import batch_generator
 from onyx.utils.logger import setup_logger
 from shared_configs.model_server_models import Embedding
@@ -87,6 +89,21 @@ logger = setup_logger()
 
 
 class ElasticsearchIndex(DocumentIndex):
+    """Elasticsearch implementation of DocumentIndex.
+
+    This class provides document indexing, retrieval, and management operations
+    for an Elasticsearch search engine instance. It handles the complete lifecycle
+    of document chunks within a specific Elasticsearch index.
+
+    Key Features:
+    - Hybrid search (keyword + vector similarity)
+    - Chunk content enrichment during indexing
+    - Chunk content cleaning during retrieval
+    - Access control and filtering
+    - Multi-index support (primary + secondary)
+    - Multitenant support via TenantState
+    """
+
     def __init__(
         self,
         index_name: str,
@@ -102,13 +119,18 @@ class ElasticsearchIndex(DocumentIndex):
         self.large_chunks_enabled = large_chunks_enabled
         self.secondary_large_chunks_enabled = secondary_large_chunks_enabled
 
+        # Store tenant state for consistency with new interface pattern
+        # Note: tenant_id will be provided via method parameters for backwards compatibility
+        self._tenant_state = TenantState(
+            tenant_id="",  # Will be provided via method parameters
+            multitenant=multitenant,
+        )
         self.multitenant = multitenant
 
         if es_client:
             self.es_client = es_client
         else:
             self.es_client = get_elasticsearch_client()
-        self.multitenant = multitenant
 
         self.index_to_large_chunks_enabled: dict[str, bool] = {}
         self.index_to_large_chunks_enabled[index_name] = large_chunks_enabled
@@ -437,7 +459,7 @@ class ElasticsearchIndex(DocumentIndex):
         batch_retrieval: bool = False,
         user_id: UUID = None,
         db_session: Session = None,
-    ) -> list[InferenceChunkUncleaned]:
+    ) -> list[InferenceChunk]:
         """Retrieve chunks by document ID
 
         This method retrieves document chunks by their document IDs. It supports both
@@ -451,7 +473,7 @@ class ElasticsearchIndex(DocumentIndex):
             db_session: Optional database session for SharePoint filtering
 
         Returns:
-            List of retrieved document chunks as InferenceChunkUncleaned objects
+            List of retrieved document chunks as InferenceChunk objects (cleaned)
         """
         if not chunk_requests:
             return []
@@ -463,19 +485,22 @@ class ElasticsearchIndex(DocumentIndex):
 
         # Choose retrieval method based on the number of requests and batch_retrieval flag
         if batch_retrieval and len(chunk_requests) > 1:
-            return batch_id_retrieval(
+            raw_chunks = batch_id_retrieval(
                 index_name=self.index_name,
                 chunk_requests=chunk_requests,
                 filter_clauses=filter_clauses,
                 es_client=self.es_client,
             )
         else:
-            return individual_id_retrieval(
+            raw_chunks = individual_id_retrieval(
                 index_name=self.index_name,
                 chunk_requests=chunk_requests,
                 filter_clauses=filter_clauses,
                 es_client=self.es_client,
             )
+
+        # Clean chunks to remove indexing-time enrichments (title prefix, metadata suffix, etc.)
+        return cleanup_chunks(raw_chunks)
 
     def hybrid_retrieval(
         self,
@@ -491,7 +516,7 @@ class ElasticsearchIndex(DocumentIndex):
         title_content_ratio: float | None = TITLE_CONTENT_RATIO,
         user_id: UUID = None,
         db_session: Session = None,
-    ) -> list[InferenceChunkUncleaned]:
+    ) -> list[InferenceChunk]:
         """Hybrid search combining keyword and vector search
 
         This implementation uses Elasticsearch's hybrid search capabilities:
@@ -613,7 +638,9 @@ class ElasticsearchIndex(DocumentIndex):
                 }
             }
 
-        return query_elasticsearch(params)
+        # Retrieve and clean chunks
+        raw_chunks = query_elasticsearch(params)
+        return cleanup_chunks(raw_chunks)
 
     def admin_retrieval(
         self,
@@ -623,7 +650,7 @@ class ElasticsearchIndex(DocumentIndex):
         offset: int = 0,
         user_id: UUID = None,
         db_session: Session = None,
-    ) -> list[InferenceChunkUncleaned]:
+    ) -> list[InferenceChunk]:
         """Admin search functionality
 
         This method provides a search interface for admin purposes, focusing on
@@ -639,7 +666,7 @@ class ElasticsearchIndex(DocumentIndex):
             db_session: Optional database session for SharePoint filtering
 
         Returns:
-            List of retrieved document chunks as InferenceChunkUncleaned objects
+            List of retrieved document chunks as InferenceChunk objects (cleaned)
         """
         # Build filter clauses including SharePoint filters
         filter_clauses = build_elastic_filters(
@@ -660,8 +687,9 @@ class ElasticsearchIndex(DocumentIndex):
             "offset": offset,
         }
 
-        # Use the query_elasticsearch function for consistent processing
-        return query_elasticsearch(params)
+        # Retrieve and clean chunks
+        raw_chunks = query_elasticsearch(params)
+        return cleanup_chunks(raw_chunks)
 
     def random_retrieval(
         self,
@@ -669,7 +697,7 @@ class ElasticsearchIndex(DocumentIndex):
         num_to_retrieve: int = 10,
         user_id: UUID = None,
         db_session: Session = None,
-    ) -> list[InferenceChunkUncleaned]:
+    ) -> list[InferenceChunk]:
         """Retrieve random documents
 
         This method retrieves a random selection of documents that match the given filters.
@@ -681,7 +709,7 @@ class ElasticsearchIndex(DocumentIndex):
             db_session: Optional database session for SharePoint filtering
 
         Returns:
-            List of randomly selected document chunks as InferenceChunkUncleaned objects
+            List of randomly selected document chunks as InferenceChunk objects (cleaned)
         """
         # Build filter clauses including SharePoint filters
         filter_clauses = build_elastic_filters(
@@ -699,8 +727,9 @@ class ElasticsearchIndex(DocumentIndex):
             "offset": 0,
         }
 
-        # Use the query_elasticsearch function for consistent processing
-        return query_elasticsearch(params)
+        # Retrieve and clean chunks
+        raw_chunks = query_elasticsearch(params)
+        return cleanup_chunks(raw_chunks)
 
     @classmethod
     def enrich_basic_chunk_info(
