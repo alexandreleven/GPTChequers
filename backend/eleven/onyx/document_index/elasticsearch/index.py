@@ -1,4 +1,3 @@
-import time
 from uuid import UUID
 
 from elasticsearch import Elasticsearch
@@ -241,26 +240,42 @@ class ElasticsearchIndex(DocumentIndex):
 
         logger.info(f"Starting to index {len(chunks)} chunks into Elasticsearch")
 
+        # Calculate total number of batches for progress tracking
+        total_batches = (
+            len(chunks) + ELASTICSEARCH_BATCH_SIZE - 1
+        ) // ELASTICSEARCH_BATCH_SIZE
+
         for batch_idx, chunk_batch in enumerate(
             batch_generator(chunks, ELASTICSEARCH_BATCH_SIZE)
         ):
-            logger.info(f"Processing batch {batch_idx + 1}/{ELASTICSEARCH_BATCH_SIZE}")
+            # Index the batch without refresh (defer refresh to end for performance)
             batch_index_elasticsearch_chunks(
                 chunks=chunk_batch,
                 index_name=self.index_name,
                 es_client=self.es_client,
                 tenant_id=tenant_id,
+                refresh=False,  # Don't refresh per batch - much faster
             )
 
-            # Add small delay between batches to avoid rate limiting
-            if batch_idx < ELASTICSEARCH_BATCH_SIZE - 1:  # Don't sleep after last batch
-                time.sleep(0.5)  # 500ms delay between batches
+            # Log progress periodically (every 10 batches or at completion)
+            if batch_idx % 10 == 0 or batch_idx == total_batches - 1:
+                chunks_indexed = min(
+                    (batch_idx + 1) * ELASTICSEARCH_BATCH_SIZE, len(chunks)
+                )
+                logger.info(
+                    f"Indexed {chunks_indexed}/{len(chunks)} chunks "
+                    f"({(chunks_indexed * 100 / len(chunks)):.1f}%)"
+                )
 
         all_cleaned_doc_ids = {chunk.source_document.id for chunk in chunks}
 
-        # Refresh index to make documents immediately available for search
+        # Refresh index once at the end to make all documents searchable
+        # This is MUCH faster than refreshing after every batch
         try:
             self.es_client.indices.refresh(index=self.index_name)
+            logger.info(
+                f"Index refresh completed - all {len(chunks)} chunks now searchable"
+            )
         except Exception as e:
             logger.warning(f"Error refreshing index: {str(e)}")
 

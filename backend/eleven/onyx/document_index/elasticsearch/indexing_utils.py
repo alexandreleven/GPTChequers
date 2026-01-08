@@ -288,6 +288,7 @@ def batch_index_elasticsearch_chunks(
     index_name: str,
     es_client: Elasticsearch,
     tenant_id: str | None = None,
+    refresh: bool = False,
 ) -> List[str]:
     """
     Index a batch of chunks into Elasticsearch using bulk API.
@@ -297,6 +298,9 @@ def batch_index_elasticsearch_chunks(
         index_name: Name of the Elasticsearch index
         es_client: Elasticsearch client
         tenant_id: Optional tenant ID for multi-tenant setups
+        refresh: Whether to refresh the index after bulk operation.
+                 Set to False during bulk indexing for better performance,
+                 then refresh once at the end.
 
     Returns:
         List of document IDs that were successfully indexed
@@ -332,7 +336,7 @@ def batch_index_elasticsearch_chunks(
         success, errors = bulk(
             client=es_client,
             actions=bulk_actions,
-            refresh=True,
+            refresh=refresh,  # Controlled by caller - False during bulk indexing
             raise_on_error=False,
             stats_only=False,
         )

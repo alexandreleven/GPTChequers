@@ -2,7 +2,7 @@ from onyx.configs.constants import SOURCE_TYPE
 
 # Elasticsearch constants
 ELASTICSEARCH_TIMEOUT = 120  # seconds
-ELASTICSEARCH_BATCH_SIZE = 10  # Similar to Vespa batch size NOTE it is not used
+ELASTICSEARCH_BATCH_SIZE = 500  # Optimal batch size for bulk API (was 10, now 500)
 TITLE_CONTENT_RATIO = 0.3  # Ratio for weighting title vs content in hybrid search
 DOC_TIME_DECAY = 1.0  # Base time decay factor for document recency
 NUM_RETURNED_HITS = 10  # Default number of hits to return
