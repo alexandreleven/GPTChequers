@@ -213,6 +213,10 @@ class DocumentSource(str, Enum):
     BITBUCKET = "bitbucket"
     TESTRAIL = "testrail"
 
+    # === ELEVEN CONNECTORS START ===
+    NOTION_SHAREPOINT = "notion_sharepoint"
+    # === ELEVEN CONNECTORS END ===
+
     # Special case just for integration tests
     MOCK_CONNECTOR = "mock_connector"
     # Special case for user files

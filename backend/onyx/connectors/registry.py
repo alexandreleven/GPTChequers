@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel
 
+from onyx.configs.app_configs import ELEVEN_EDITION_ENABLED
 from onyx.configs.constants import DocumentSource
 
 
@@ -218,3 +219,11 @@ CONNECTOR_CLASS_MAP = {
         class_name="MockConnector",
     ),
 }
+
+if ELEVEN_EDITION_ENABLED:
+    try:
+        from eleven.onyx.connectors.registry import ELEVEN_CONNECTOR_CLASS_MAP
+
+        CONNECTOR_CLASS_MAP.update(ELEVEN_CONNECTOR_CLASS_MAP)
+    except ImportError:
+        pass
