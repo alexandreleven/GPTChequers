@@ -506,6 +506,10 @@ export enum ValidSources {
   Bitbucket = "bitbucket",
   TestRail = "testrail",
 
+  // === ELEVEN CONNECTORS START ===
+  NotionSharepoint = "notion_sharepoint",
+  // === ELEVEN CONNECTORS END ===
+
   // Federated Connectors
   FederatedSlack = "federated_slack",
 }

@@ -13,6 +13,10 @@ import useSWR from "swr";
 import { errorHandlingFetcher } from "@/lib/fetcher";
 import { buildSimilarCredentialInfoURL } from "@/app/admin/connector/[ccPairId]/lib";
 import { Credential } from "@/lib/connectors/credentials";
+// === ELEVEN EDITION START ===
+import { ELEVEN_EDITION_ENABLED } from "@/lib/constants";
+import { ELEVEN_CONNECTOR_SOURCES } from "@/app/eleven/connectors";
+// === ELEVEN EDITION END ===
 
 export default function ConnectorWrapper({
   connector,
@@ -27,6 +31,33 @@ export default function ConnectorWrapper({
     buildSimilarCredentialInfoURL(connector),
     errorHandlingFetcher
   );
+
+  // === ELEVEN EDITION START ===
+  // Check if this is an Eleven Edition connector and if Eleven Edition is enabled
+  const isElevenConnector = ELEVEN_CONNECTOR_SOURCES.includes(connector as any);
+  if (isElevenConnector && !ELEVEN_EDITION_ENABLED) {
+    return (
+      <FormProvider connector={connector}>
+        <div className="flex justify-center w-full h-full">
+          <Sidebar />
+          <div className="mt-12 w-full max-w-3xl mx-auto">
+            <div className="mx-auto flex flex-col gap-y-2">
+              <HeaderTitle>
+                <p>This connector requires Eleven Edition to be enabled.</p>
+              </HeaderTitle>
+              <Button
+                onClick={() => window.open("/admin/add-connector", "_self")}
+                className="mr-auto"
+              >
+                Back to Connectors
+              </Button>
+            </div>
+          </div>
+        </div>
+      </FormProvider>
+    );
+  }
+  // === ELEVEN EDITION END ===
 
   // Check if the connector is valid
   if (!isValidSource(connector)) {

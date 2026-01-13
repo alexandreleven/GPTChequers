@@ -1,5 +1,11 @@
 import { ValidSources } from "../types";
 import { TypedFile } from "./fileTypes";
+// === ELEVEN CONNECTORS START ===
+import {
+  ELEVEN_CREDENTIAL_TEMPLATES,
+  ELEVEN_CONNECTOR_SOURCES,
+} from "@/app/eleven/connectors";
+// === ELEVEN CONNECTORS END ===
 
 export interface OAuthAdditionalKwargDescription {
   name: string;
@@ -281,7 +287,16 @@ export interface TestRailCredentialJson {
   testrail_api_key: string;
 }
 
-export const credentialTemplates: Record<ValidSources, any> = {
+// === ELEVEN CONNECTORS START ===
+// Type for base sources (excluding Eleven Edition connectors)
+type BaseValidSources = Exclude<
+  ValidSources,
+  (typeof ELEVEN_CONNECTOR_SOURCES)[number]
+>;
+// === ELEVEN CONNECTORS END ===
+
+// Base credential templates (excluding Eleven connectors)
+const baseCredentialTemplates: Record<BaseValidSources, any> = {
   github: { github_access_token: "" } as GithubCredentialJson,
   gitlab: {
     gitlab_url: "",
@@ -488,6 +503,14 @@ export const credentialTemplates: Record<ValidSources, any> = {
     testrail_api_key: "",
   } as TestRailCredentialJson,
 };
+
+// Merge base templates with Eleven credentials
+export const credentialTemplates: Record<ValidSources, any> = {
+  ...baseCredentialTemplates,
+  // === ELEVEN CONNECTORS START ===
+  ...ELEVEN_CREDENTIAL_TEMPLATES,
+  // === ELEVEN CONNECTORS END ===
+} as Record<ValidSources, any>;
 
 export const credentialDisplayNames: Record<string, string> = {
   // Github
