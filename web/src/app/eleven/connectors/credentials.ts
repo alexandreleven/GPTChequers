@@ -5,7 +5,10 @@
  * connectors. Each template defines the authentication methods and required fields.
  */
 
-import { SharepointCredentialJson } from "@/lib/connectors/credentials";
+import {
+  NotionSharepointCredentialJson,
+  SharepointCredentialJson,
+} from "@/lib/connectors/credentials";
 import { CredentialTemplateWithAuth } from "@/lib/connectors/credentials";
 
 export const ELEVEN_CREDENTIAL_TEMPLATES: Record<string, any> = {
@@ -19,6 +22,7 @@ export const ELEVEN_CREDENTIAL_TEMPLATES: Record<string, any> = {
           sp_client_id: "",
           sp_client_secret: "",
           sp_directory_id: "",
+          notion_api_key: "",
         },
         description:
           "If you select this mode, the Notion Sharepoint connector will use a client secret to authenticate. You will need to provide the client ID and client secret.",
@@ -32,11 +36,12 @@ export const ELEVEN_CREDENTIAL_TEMPLATES: Record<string, any> = {
           sp_directory_id: "",
           sp_certificate_password: "",
           sp_private_key: null,
+          notion_api_key: "",
         },
         description:
           "If you select this mode, the Notion Sharepoint connector will use a certificate to authenticate. You will need to provide the client ID, directory ID, certificate password, and PFX data.",
         disablePermSync: false,
       },
     ],
-  } as CredentialTemplateWithAuth<SharepointCredentialJson>,
+  } as CredentialTemplateWithAuth<NotionSharepointCredentialJson>,
 };
