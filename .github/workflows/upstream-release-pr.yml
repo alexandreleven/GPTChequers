@@ -88,7 +88,15 @@ jobs:
       - name: Create tag in fork
         if: steps.detect.outputs.tag != ''
         run: |
-          git tag ${{ steps.detect.outputs.tag }}
-          git push origin ${{ steps.detect.outputs.tag }}
-
+          TAG=${{ steps.detect.outputs.tag }}
+      
+          # Tag already exists? Do nothing.
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+            exit 0
+          fi
+      
+          # Create tag pointing to the already-fetched upstream tag commit
+          git tag "$TAG" "refs/tags/$TAG"
+          git push origin "$TAG"
 
