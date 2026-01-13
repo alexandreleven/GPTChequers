@@ -75,6 +75,12 @@ jobs:
         run: |
           git checkout -B upstream/${{ steps.detect.outputs.tag }}
 
+      - name: Push upstream release branch
+        if: steps.detect.outputs.tag != ''
+        run: |
+          git push -u origin upstream/${{ steps.detect.outputs.tag }}
+
+
       # Step 5: Open a Pull Request from the new branch to main
       - name: Open Pull Request
         uses: peter-evans/create-pull-request@v6
