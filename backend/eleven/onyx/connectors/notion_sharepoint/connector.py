@@ -701,6 +701,7 @@ class NotionSharepointConnector(
         self.include_site_pages = include_site_pages
         self.include_site_documents = include_site_documents
         self.sp_tenant_domain: str | None = None
+        self.notion_api_key: str | None = None
 
     def validate_connector_settings(self) -> None:
         # Validate that at least one content type is enabled
@@ -1209,6 +1210,13 @@ class NotionSharepointConnector(
         sp_directory_id = credentials.get("sp_directory_id")
         sp_private_key = credentials.get("sp_private_key")
         sp_certificate_password = credentials.get("sp_certificate_password")
+
+        # Load Notion API key
+        self.notion_api_key = credentials.get("notion_api_key")
+        if not self.notion_api_key:
+            raise ConnectorValidationError(
+                "Notion API key is required for Notion Sharepoint connector"
+            )
 
         authority_url = f"https://login.microsoftonline.com/{sp_directory_id}"
 
