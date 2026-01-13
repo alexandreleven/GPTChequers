@@ -64,13 +64,11 @@ jobs:
           git remote add upstream https://github.com/onyx-dot-app/onyx.git
           git fetch upstream refs/tags/${{ steps.detect.outputs.tag }}:refs/tags/${{ steps.detect.outputs.tag }}
 
-      # Step 4: Create a branch from the upstream tag and push to fork
-      - name: Create branch from tag
+      # Step 4: Checkout upstream tag
+      - name: Checkout upstream tag
         if: steps.detect.outputs.tag != ''
         run: |
-          BRANCH="upstream/${{ steps.detect.outputs.tag }}"
-          git checkout -B "$BRANCH" "refs/tags/${{ steps.detect.outputs.tag }}"
-          git push origin "$BRANCH" --force
+          git checkout refs/tags/${{ steps.detect.outputs.tag }}
 
       # Step 5: Open a Pull Request from the new branch to main
       - name: Open Pull Request
@@ -79,7 +77,6 @@ jobs:
           token: ${{ secrets.PR_OPENER }}
           base: main
           branch: upstream/${{ steps.detect.outputs.tag }}
-          rebase: false
           title: "chore: sync upstream release ${{ steps.detect.outputs.tag }}"
           body: |
             This PR syncs upstream release **${{ steps.detect.outputs.tag }}**.
