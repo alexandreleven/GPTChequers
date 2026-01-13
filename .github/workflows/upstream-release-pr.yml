@@ -74,15 +74,15 @@ jobs:
 
       # Step 5: Open a Pull Request from the new branch to main
       - name: Open Pull Request
-        if: steps.detect.outputs.tag != ''
-        run: |
-          gh pr create \
-            --base main \
-            --head upstream/${{ steps.detect.outputs.tag }} \
-            --title "chore: sync upstream release ${{ steps.detect.outputs.tag }}" \
-            --body "Sync upstream tag ${{ steps.detect.outputs.tag }}"
-        env:
-          GH_TOKEN: ${{ secrets.PR_OPENER }}
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.PR_OPENER }}
+          base: main
+          branch: upstream/${{ steps.detect.outputs.tag }}
+          rebase: false
+          title: "chore: sync upstream release ${{ steps.detect.outputs.tag }}"
+          body: |
+            This PR syncs upstream release **${{ steps.detect.outputs.tag }}**.
 
       # Step 6: Create tag in fork
       - name: Create tag in fork
