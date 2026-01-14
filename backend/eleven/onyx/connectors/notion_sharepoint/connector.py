@@ -713,11 +713,20 @@ class NotionSharepointConnector(
 
         # Ensure sites are sharepoint urls
         for site_url in self.sites:
-            if not site_url.startswith("https://") or not (
-                "/sites/" in site_url or "/teams/" in site_url
-            ):
+            if not site_url.startswith("https://"):
                 raise ConnectorValidationError(
-                    "Site URLs must be full Sharepoint URLs (e.g. https://your-tenant.sharepoint.com/sites/your-site or https://your-tenant.sharepoint.com/teams/your-team)"
+                    "Site URLs must use HTTPS (e.g. https://your-tenant.sharepoint.com/sites/your-site)"
+                )
+            # Validate it's a sharepoint domain
+            try:
+                parsed = urlsplit(site_url)
+                if "sharepoint.com" not in parsed.netloc:
+                    raise ConnectorValidationError(
+                        "URL must be a SharePoint URL (must contain 'sharepoint.com' in the domain)"
+                    )
+            except Exception:
+                raise ConnectorValidationError(
+                    "Invalid URL format. Please provide a valid SharePoint URL."
                 )
 
     @property
@@ -764,6 +773,13 @@ class NotionSharepointConnector(
             if base_url is None:
                 continue
 
+            if not parts:
+                # Root site with no path
+                site_data_list.append(
+                    SiteDescriptor(url=base_url, drive_name=None, folder_path=None)
+                )
+                continue
+
             lower_parts = [part.lower() for part in parts]
             site_type_index = None
             for site_token in ("sites", "teams"):
@@ -771,15 +787,19 @@ class NotionSharepointConnector(
                     site_type_index = lower_parts.index(site_token)
                     break
 
-            if site_type_index is None or len(parts) <= site_type_index + 1:
-                logger.warning(
-                    f"Site URL '{url}' is not a valid Sharepoint URL (must contain /sites/<name> or /teams/<name>)"
+            if site_type_index is not None and len(parts) > site_type_index + 1:
+                site_path = parts[: site_type_index + 2]
+                remaining_parts = parts[site_type_index + 2 :]
+                site_url = f"{base_url}/" + "/".join(site_path)
+            else:
+                # Handle custom managed paths (e.g., /engagements, /projects, etc.)
+                # Assume the first segment is the site, rest is drive/folder
+                logger.info(
+                    f"Site URL '{url}' uses custom managed path (not /sites/ or /teams/)"
                 )
-                continue
-
-            site_path = parts[: site_type_index + 2]
-            remaining_parts = parts[site_type_index + 2 :]
-            site_url = f"{base_url}/" + "/".join(site_path)
+                site_path = parts[:1]  # First segment is the site
+                remaining_parts = parts[1:]  # Rest is drive/folder
+                site_url = f"{base_url}/" + "/".join(site_path)
 
             # Extract drive name and folder path
             if remaining_parts:
