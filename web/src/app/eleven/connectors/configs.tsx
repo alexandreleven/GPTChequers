@@ -12,41 +12,31 @@ export const ELEVEN_CONNECTOR_CONFIGS: Record<string, ConnectionConfiguration> =
     notion_sharepoint: {
       description: "Configure Notion Sharepoint connector",
       subtext:
-        "Connect to your Notion-integrated Sharepoint instance to index documents and pages.",
+        "Index SharePoint documents referenced in a Notion database. The connector reads URLs from a specified column and enriches documents with Notion metadata.",
       values: [
         {
-          type: "list",
-          query: "Enter Notion Sharepoint sites:",
-          label: "Sites",
-          name: "sites",
-          optional: true,
-          description: `• If no sites are specified, all sites in your organization will be indexed (Sites.Read.All permission required).
-• Specifying 'https://yourcompany.sharepoint.com/sites/support' for example only indexes this site.
-• Specifying 'https://yourcompany.sharepoint.com/sites/support/subfolder' for example only indexes this folder.
-• This connector integrates Notion metadata with Sharepoint documents.`,
-        },
-      ],
-      advanced_values: [
-        {
-          type: "checkbox",
-          query: "Index Documents:",
-          label: "Index Documents",
-          name: "include_site_documents",
-          optional: true,
-          default: true,
-          description:
-            "Index documents of all Sharepoint libraries or folders defined above.",
+          type: "text",
+          query: "Enter Notion Database ID:",
+          label: "Notion Database ID",
+          name: "notion_database_id",
+          optional: false,
+          description: `The ID of the Notion database containing SharePoint links.
+• You can find this in the database URL: notion.so/<workspace>/<database_id>
+• Format: 32-character hexadecimal string (e.g., 8aea83e7d9884021846a80e550319a09)`,
         },
         {
-          type: "checkbox",
-          query: "Index ASPX Sites:",
-          label: "Index ASPX Sites",
-          name: "include_site_pages",
+          type: "text",
+          query: "Enter Link Column Name:",
+          label: "Link Property Name",
+          name: "link_property_name",
           optional: true,
-          default: true,
-          description:
-            "Index aspx-pages of all Sharepoint sites defined above, even if a library or folder is specified.",
+          default: "Link",
+          description: `The name of the Notion database column containing SharePoint URLs.
+• Default: "Link"
+• Supports URL, Rich Text, and Files property types
+• SharePoint sharing links and direct URLs are both supported`,
         },
       ],
+      advanced_values: [],
     },
   };

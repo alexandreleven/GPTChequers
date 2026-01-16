@@ -223,7 +223,7 @@ export interface SharepointCredentialJson {
 
 export interface NotionSharepointCredentialJson
   extends SharepointCredentialJson {
-  notion_api_key: string;
+  notion_integration_token: string;
 }
 
 export interface AsanaCredentialJson {
@@ -682,9 +682,6 @@ export const credentialDisplayNames: Record<string, string> = {
   // Bitbucket
   bitbucket_email: "Bitbucket Account Email",
   bitbucket_api_token: "Bitbucket API Token",
-
-  // Notion Sharepoint
-  notion_api_key: "Notion API Key",
 };
 
 export function getDisplayNameForCredentialKey(key: string): string {
