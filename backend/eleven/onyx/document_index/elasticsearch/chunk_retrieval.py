@@ -61,17 +61,7 @@ def query_elasticsearch(
     index_name = query_params["index"]
 
     # Build the query body
-    query_body = {
-        "query": query_params["dsl_query"],
-        "size": query_params["num_to_retrieve"],
-        "from": query_params.get("offset", 0),
-    }
-
-    # Add optional parameters if they are present
-    optional_params = ["_source", "knn", "rank"]
-    for param in optional_params:
-        if param in query_params:
-            query_body[param] = query_params[param]
+    query_body = {k: v for k, v in query_params.items() if k != "index"}
 
     try:
         with get_elasticsearch_client() as es_client:

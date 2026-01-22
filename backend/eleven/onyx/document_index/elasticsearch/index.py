@@ -523,8 +523,8 @@ class ElasticsearchIndex(DocumentIndex):
         query_embedding: Embedding,
         final_keywords: list[str] | None,
         filters: IndexFilters,
-        hybrid_alpha: float,
-        time_decay_multiplier: float,
+        hybrid_alpha: float,  # kept for API compatibility, NOT used by ES
+        time_decay_multiplier: float,  # not supported natively, ignored
         num_to_retrieve: int,
         ranking_profile_type: QueryExpansionType,
         offset: int = 0,
@@ -532,128 +532,100 @@ class ElasticsearchIndex(DocumentIndex):
         user_id: UUID = None,
         db_session: Session = None,
     ) -> list[InferenceChunk]:
-        """Hybrid search combining keyword and vector search
-
-        This implementation uses Elasticsearch's hybrid search capabilities:
-        1. BM25 text search for keyword matching
-        2. Vector similarity using KNN search
-        3. Results combined using Reciprocal Rank Fusion (RRF)
-
-        Parameters:
-        - ranking_profile_type: KEYWORD favors exact matches, SEMANTIC favors semantic similarity
-        - title_content_ratio: Weight given to title (0-1), with 1-ratio given to content
-        - hybrid_alpha: Weight for vector similarity (1.0) vs BM25 (0.0)
-
-        Key differences from Vespa:
-        - Elasticsearch doesn't support mini-chunks, so we only use the main embedding
-        - We use RRF ranking instead of a custom function score
         """
-        # Build filter clauses for Elasticsearch including SharePoint filters
+        Hybrid search using Elasticsearch native hybrid search (retriever.rrf)
+
+        - BM25 keyword search (standard retriever)
+        - Vector KNN search (knn retriever)
+        - Fusion via Reciprocal Rank Fusion (RRF)
+
+        NOTE:
+        - Elasticsearch does NOT support alpha-weighted hybrid (BM25 vs vector)
+        - hybrid_alpha is ignored by design
+        """
+
+        # Filters
+
         filter_clauses = build_elastic_filters(
             filters, user_id=user_id, db_session=db_session
         )
 
-        # Use final_keywords if provided, otherwise use the original query
+        # Final query text
+
         final_query = " ".join(final_keywords) if final_keywords else query
 
-        # Set default title_content_ratio if not provided
         if title_content_ratio is None:
             title_content_ratio = TITLE_CONTENT_RATIO
 
-        # Calculate boost values for title and content based on title_content_ratio
-        # title_content_ratio of 0.10 means 10% weight on title, 90% on content
-        title_boost = (
-            title_content_ratio * 10
-        )  # Scale up for Elasticsearch boost values
+        title_boost = title_content_ratio * 10
         content_boost = (1 - title_content_ratio) * 10
 
-        # Adjust boosts based on ranking_profile_type
-        # KEYWORD: boost exact matches more, reduce semantic weight
-        # SEMANTIC: boost semantic similarity more
-        if ranking_profile_type == QueryExpansionType.KEYWORD:
-            # For keyword queries, we want more emphasis on exact text matches
-            # Increase text match weight, decrease vector weight
-            text_match_boost = 1.5
-            logger.debug("Using KEYWORD ranking profile with boosted text matching")
-        else:  # SEMANTIC
-            # For semantic queries, we want balanced or more vector-focused search
-            text_match_boost = 1.0
-            logger.debug("Using SEMANTIC ranking profile with balanced search")
+        # Ranking profile tuning
 
-        # Build a multi_match query that searches across title and content with appropriate weights
-        # This respects the title_content_ratio parameter
+        if ranking_profile_type == QueryExpansionType.KEYWORD:
+            text_match_boost = 1.5
+            num_candidates = min(NUM_CANDIDATES, num_to_retrieve * 5)
+            rrf_rank_constant = 20
+        else:  # SEMANTIC
+            text_match_boost = 1.0
+            num_candidates = NUM_CANDIDATES
+            rrf_rank_constant = 60
+
+        # Text (BM25) query
         text_query = {
             "multi_match": {
                 "query": final_query,
                 "fields": [
-                    f"semantic_identifier^{title_boost * text_match_boost}",  # Title field
-                    f"content^{content_boost * text_match_boost}",  # Content field
+                    f"semantic_identifier^{title_boost * text_match_boost}",
+                    f"content^{content_boost * text_match_boost}",
                 ],
-                "type": "best_fields",
-                "tie_breaker": 0.3,
+                "type": "most_fields",
+                "operator": "or",
             }
         }
 
-        # Build the complete query
-        query_obj = {
-            "bool": {
-                "must": [text_query],
-                "filter": {"bool": {"must": filter_clauses}},
+        standard_retriever = {
+            "standard": {
+                "query": {
+                    "bool": {
+                        "must": [text_query],
+                        "filter": {"bool": {"must": filter_clauses}},
+                    }
+                }
             }
         }
 
-        # This approach uses standard Elasticsearch query with KNN
+        retrievers = [standard_retriever]
+
+        # Vector retriever (if embedding provided)
+        if query_embedding is not None and len(query_embedding) > 0:
+            knn_retriever = {
+                "knn": {
+                    "field": EMBEDDINGS,
+                    "query_vector": query_embedding,
+                    "k": num_to_retrieve,
+                    "num_candidates": num_candidates,
+                    "filter": {"bool": {"must": filter_clauses}},
+                }
+            }
+            retrievers.append(knn_retriever)
+
+        # Elasticsearch search params (HYBRID)
         params = {
             "index": self.index_name,
-            "dsl_query": query_obj,
-            "num_to_retrieve": num_to_retrieve,
-            "offset": offset,
-            "_source": {
-                "excludes": ["vector"]  # Exclude the embedding vector from the results
-            },
-        }
-
-        # Add vector search parameters if we have an embedding
-        # The vector search weight is controlled by hybrid_alpha and ranking_profile_type
-        if query_embedding is not None and len(query_embedding) > 0:
-            # Adjust num_candidates based on ranking_profile_type
-            # KEYWORD: fewer candidates (faster, more focused on text)
-            # SEMANTIC: more candidates (better semantic coverage)
-            if ranking_profile_type == QueryExpansionType.KEYWORD:
-                effective_num_candidates = min(NUM_CANDIDATES, num_to_retrieve * 5)
-            else:  # SEMANTIC
-                effective_num_candidates = NUM_CANDIDATES
-
-            params["knn"] = {
-                "field": EMBEDDINGS,
-                "query_vector": query_embedding,
-                "k": num_to_retrieve,
-                "num_candidates": effective_num_candidates,
-                "filter": {
-                    "bool": {
-                        "must": filter_clauses,
-                    }
-                },
-            }
-
-            # RRF (Reciprocal Rank Fusion) combines text and vector results
-            # The rank_constant can be adjusted based on ranking_profile_type
-            # Higher rank_constant = more weight to lower-ranked results
-            if ranking_profile_type == QueryExpansionType.KEYWORD:
-                # Lower rank_constant for keyword: top matches matter more
-                rrf_rank_constant = 20
-            else:  # SEMANTIC
-                # Higher rank_constant for semantic: give more chance to diverse results
-                rrf_rank_constant = 60
-
-            params["rank"] = {
+            "size": num_to_retrieve,
+            "from": offset,
+            "_source": {"excludes": ["vector"]},
+            "retriever": {
                 "rrf": {
+                    "retrievers": retrievers,
                     "rank_window_size": num_to_retrieve * 2,
                     "rank_constant": rrf_rank_constant,
                 }
-            }
+            },
+        }
 
-        # Retrieve and clean chunks
+        # Execute + cleanup
         raw_chunks = query_elasticsearch(params)
         return cleanup_chunks(raw_chunks)
 
