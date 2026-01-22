@@ -1,10 +1,10 @@
 """
 Notion-SharePoint Hybrid Connector
 
-This connector reads a Notion database, extracts SharePoint URLs from a specified column,
-and indexes the SharePoint documents with metadata from the Notion database rows.
+Reads a Notion database, extracts SharePoint URLs from a specified column,
+and indexes SharePoint documents with Notion metadata.
 
-It handles various SharePoint URL formats:
+Handles different SharePoint URL formats:
 - Direct file URLs
 - Sharing links (/:f:/r/, /:x:/r/, etc.)
 - Relative paths
@@ -24,6 +24,7 @@ from office365.onedrive.driveitems.driveItem import DriveItem  # type: ignore[im
 from pydantic import BaseModel
 from retry import retry
 
+from eleven.onyx.configs.app_configs import METADATA_TO_INCLUDE
 from onyx.configs.app_configs import INDEX_BATCH_SIZE
 from onyx.configs.app_configs import REQUEST_TIMEOUT_SECONDS
 from onyx.configs.app_configs import SHAREPOINT_CONNECTOR_SIZE_THRESHOLD
@@ -55,7 +56,7 @@ from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
 
-_NOTION_CALL_TIMEOUT = 30  # 30 seconds
+_NOTION_CALL_TIMEOUT = 30
 _NOTION_PAGE_SIZE = 100
 
 
@@ -64,7 +65,7 @@ class NotionDatabaseRow(BaseModel):
 
     id: str
     sharepoint_url: str | None
-    metadata: dict[str, str]
+    metadata: dict[str, str | list[str]]
     last_edited_time: datetime | None
     notion_url: str
 
@@ -74,12 +75,12 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
     Hybrid connector that:
     1. Reads rows from a Notion database
     2. Extracts SharePoint URLs from a specified column
-    3. Fetches and indexes SharePoint documents with Notion metadata
+    3. Retrieves and indexes SharePoint documents with Notion metadata
 
-    Arguments:
-        notion_database_id: The ID of the Notion database to read from
+    Args:
+        notion_database_id: The ID of the Notion database to read
         link_property_name: The name of the column containing SharePoint URLs (default: "Link")
-        batch_size: Number of documents to index in a batch
+        batch_size: Number of documents to index per batch
     """
 
     def __init__(
@@ -88,7 +89,6 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
         link_property_name: str = "Link",
         batch_size: int = INDEX_BATCH_SIZE,
     ) -> None:
-        """Initialize the connector with parameters."""
         self.notion_database_id = notion_database_id
         self.link_property_name = link_property_name
         self.batch_size = batch_size
@@ -103,24 +103,26 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
         self._graph_client: GraphClient | None = None
         self.msal_app: msal.ConfidentialClientApplication | None = None
 
-        # Track processed rows to avoid duplicates
+        # Cache and state
         self.processed_rows: set[str] = set()
+        self._notion_page_title_cache: dict[str, tuple[str | None, str | None]] = {}
+        self._cached_schema: dict[str, str] | None = None
 
     @property
     def graph_client(self) -> GraphClient:
-        """Get the Graph client, raising an error if not initialized."""
+        """Get Graph client, raises error if not initialized."""
         if self._graph_client is None:
             raise ConnectorMissingCredentialError("SharePoint")
         return self._graph_client
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """
-        Load both Notion and SharePoint credentials.
+        Load Notion and SharePoint credentials.
 
         Expected credentials:
         - notion_integration_token: Notion integration token
-        - sp_client_id: SharePoint app client ID
-        - sp_client_secret: SharePoint app client secret
+        - sp_client_id: SharePoint application client ID
+        - sp_client_secret: SharePoint application client secret
         - sp_directory_id: Azure AD directory (tenant) ID
         - authentication_method: "client_secret" or "certificate" (optional)
         """
@@ -188,16 +190,136 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
             raise ConnectorMissingCredentialError("SharePoint credentials not loaded")
 
     @retry(tries=3, delay=1, backoff=2)
-    def _fetch_notion_database(self, cursor: str | None = None) -> dict[str, Any]:
+    def _get_page_name(self, page_id: str) -> str | None:
         """
-        Fetch rows from the Notion database with pagination.
+        Get Notion page name from page ID by extracting title from page properties.
 
         Args:
-            cursor: Pagination cursor for fetching next page
+            page_id: Notion page ID
 
         Returns:
-            API response containing results and pagination info
+            Page title or None if extraction fails
         """
+        try:
+            response = rl_requests.get(
+                f"https://api.notion.com/v1/pages/{page_id}",
+                headers=self.notion_headers,
+                timeout=_NOTION_CALL_TIMEOUT,
+            )
+            response.raise_for_status()
+            page_data = response.json()
+
+            # Extract title from properties - look for title property
+            properties = page_data.get("properties", {})
+            for prop in properties.values():
+                if prop.get("type") == "title":
+                    title_data = prop.get("title", [])
+                    if title_data:
+                        # Extract plain text from first title element
+                        return title_data[0].get("plain_text")
+            return None
+        except Exception:
+            return None
+
+    def _fetch_notion_page_title(self, page_id: str) -> tuple[str | None, str | None]:
+        """
+        Fetch a Notion page title by its ID.
+
+        Returns:
+            Tuple of (title, error_reason) where error_reason is None on success,
+            or a string describing the error (e.g., "no access", "not found")
+        """
+        # Check cache first
+        if page_id in self._notion_page_title_cache:
+            return self._notion_page_title_cache[page_id]
+
+        try:
+            url = f"https://api.notion.com/v1/pages/{page_id}"
+            response = rl_requests.get(
+                url,
+                headers=self.notion_headers,
+                timeout=_NOTION_CALL_TIMEOUT,
+            )
+            response.raise_for_status()
+            page_data = response.json()
+
+            # Extract title from properties - look for title property
+            properties = page_data.get("properties", {})
+            for prop_name, prop_value in properties.items():
+                if prop_value.get("type") == "title":
+                    title_data = prop_value.get("title", [])
+                    if title_data:
+                        # Extract text from rich text
+                        title_parts = []
+                        for text_obj in title_data:
+                            if text_obj.get("type") == "text":
+                                text_content = text_obj.get("text", {}).get(
+                                    "content", ""
+                                )
+                                if text_content:
+                                    title_parts.append(text_content)
+                        if title_parts:
+                            title = "".join(title_parts)
+                            self._notion_page_title_cache[page_id] = (title, None)
+                            return title, None
+
+            # Fallback: try to get from object title if available
+            if "title" in page_data:
+                title = page_data["title"]
+                self._notion_page_title_cache[page_id] = (title, None)
+                return title, None
+
+        except Exception as e:
+            # Determine error type
+            error_msg = str(e).lower()
+            if "404" in error_msg or "not found" in error_msg:
+                reason = "not found"
+            elif (
+                "403" in error_msg or "forbidden" in error_msg or "access" in error_msg
+            ):
+                reason = "no access"
+            else:
+                reason = "error"
+
+            # Cache error to avoid retrying
+            self._notion_page_title_cache[page_id] = (None, reason)
+            return None, reason
+
+        # Cache None if no title found
+        self._notion_page_title_cache[page_id] = (None, "no title")
+        return None, "no title"
+
+    def _get_database_schema(self) -> dict[str, str]:
+        """Get database schema to identify relation properties."""
+        if self._cached_schema is not None:
+            return self._cached_schema
+
+        try:
+            url = f"https://api.notion.com/v1/databases/{self.notion_database_id}"
+            response = rl_requests.get(
+                url,
+                headers=self.notion_headers,
+                timeout=_NOTION_CALL_TIMEOUT,
+            )
+            response.raise_for_status()
+            db_data = response.json()
+
+            schema = {}
+            properties = db_data.get("properties", {})
+            for prop_name, prop_info in properties.items():
+                prop_type = prop_info.get("type", "")
+                schema[prop_name] = prop_type
+
+            self._cached_schema = schema
+            logger.info(f"Database schema loaded: {len(schema)} properties")
+            return schema
+        except Exception as e:
+            logger.warning(f"Failed to fetch database schema: {e}")
+            return {}
+
+    @retry(tries=3, delay=1, backoff=2)
+    def _fetch_notion_database(self, cursor: str | None = None) -> dict[str, Any]:
+        """Fetch Notion database rows with pagination."""
         url = f"https://api.notion.com/v1/databases/{self.notion_database_id}/query"
         body: dict[str, Any] = {"page_size": _NOTION_PAGE_SIZE}
         if cursor:
@@ -241,7 +363,7 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
             for row in data.get("results", []):
                 row_id = row.get("id", "")
 
-                # Parse last edited time
+                # Parse last modified time
                 last_edited_str = row.get("last_edited_time")
                 last_edited_time = None
                 if last_edited_str:
@@ -255,12 +377,12 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
                     if end is not None and last_edited_time.timestamp() > end:
                         continue
 
-                # Extract SharePoint URL from the specified property
+                # Extract SharePoint URL from specified property
                 properties = row.get("properties", {})
                 sharepoint_url = self._extract_url_from_property(properties)
 
-                # Extract metadata from other properties
-                metadata = self._extract_metadata_from_properties(properties)
+                # Extract Notion metadata with notion_ prefix
+                metadata = self._extract_notion_metadata(row)
 
                 yield NotionDatabaseRow(
                     id=row_id,
@@ -277,18 +399,15 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
 
     def _extract_url_from_property(self, properties: dict[str, Any]) -> str | None:
         """
-        Extract the SharePoint URL from the link property.
+        Extract SharePoint URL from link property.
 
         Handles different Notion property types:
         - url: Direct URL value
-        - rich_text: Text containing URL
+        - rich_text: Text containing a URL
         - files: External file with URL
 
-        Args:
-            properties: The properties dict from a Notion row
-
         Returns:
-            The extracted URL or None if not found
+            Extracted URL or None if not found
         """
         link_prop = properties.get(self.link_property_name)
         if not link_prop:
@@ -296,25 +415,25 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
 
         prop_type = link_prop.get("type")
 
-        # Handle "url" type property
+        # Handle "url" property type
         if prop_type == "url":
             return link_prop.get("url")
 
-        # Handle "rich_text" type property
+        # Handle "rich_text" property type
         if prop_type == "rich_text":
             rich_text_list = link_prop.get("rich_text", [])
             for rt in rich_text_list:
-                # Check for hyperlink
+                # Check hyperlink
                 if rt.get("href"):
                     return rt.get("href")
-                # Check for plain text URL
+                # Check plain URL text
                 if rt.get("type") == "text":
                     text_content = rt.get("text", {}).get("content", "")
                     if text_content.startswith("http"):
                         return text_content
             return None
 
-        # Handle "files" type property (external files)
+        # Handle "files" property type (external files)
         if prop_type == "files":
             files = link_prop.get("files", [])
             for f in files:
@@ -326,166 +445,108 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
 
         return None
 
-    def _extract_metadata_from_properties(
-        self, properties: dict[str, Any]
-    ) -> dict[str, str]:
+    def _extract_notion_metadata(
+        self, page: dict[str, Any]
+    ) -> dict[str, str | list[str]]:
         """
-        Extract metadata from Notion row properties (excluding the link column).
+        Parse Notion page properties to extract metadata with notion_ prefix.
 
         Args:
-            properties: The properties dict from a Notion row
+            page: Notion page object with properties
 
         Returns:
-            Dict of property names to string values
+            Dict of parsed properties with notion_ prefix (values are str or list[str])
         """
-        metadata: dict[str, str] = {}
+        properties = page.get("properties", {})
+        result: dict[str, str | list[str]] = {}
 
-        for prop_name, prop_value in properties.items():
-            # Skip the link property
-            if prop_name == self.link_property_name:
+        for name, prop in properties.items():
+            # Skip link property (already extracted separately)
+            if name == self.link_property_name:
                 continue
 
-            if not prop_value or not isinstance(prop_value, dict):
-                continue
+            prop_type = prop.get("type")
 
-            value = self._property_to_string(prop_value)
-            if value:
-                metadata[prop_name] = value
+            # Clean property name: remove common emojis, lowercase, replace spaces with underscores
+            key = f"notion_{name.lower()}"
+            # Remove common emojis that may appear in Notion property names
+            emojis_to_remove = ["💼", "📠", "🔑", "⚠️", "⚡", "🐍", "👏", "🎓"]
+            for emoji in emojis_to_remove:
+                key = key.replace(emoji, "")
+            key = key.replace(" ", "_").strip("_")
 
-        return metadata
+            # Remove multiple consecutive underscores
+            while "__" in key:
+                key = key.replace("__", "_")
+            key = key.strip("_")
 
-    def _property_to_string(self, prop: dict[str, Any]) -> str | None:
-        """
-        Convert a Notion property to a string value.
+            # Parse based on type
+            value = None
 
-        Args:
-            prop: A Notion property dict
+            if prop_type == "rich_text":
+                texts = prop.get("rich_text", [])
+                value = "".join([t["plain_text"] for t in texts])
 
-        Returns:
-            String representation of the property value or None
-        """
-        prop_type = prop.get("type")
-        if not prop_type:
-            return None
+            elif prop_type == "title":
+                texts = prop.get("title", [])
+                value = "".join([t["plain_text"] for t in texts])
 
-        prop_data = prop.get(prop_type)
-        if prop_data is None:
-            return None
+            # elif prop_type == "url":
+            #     value = prop.get("url")
 
-        # Handle different property types
-        if prop_type == "title":
-            return self._extract_rich_text(prop_data)
+            elif prop_type == "date":
+                date_obj = prop.get("date")
+                if date_obj:
+                    # Extract end date if available, otherwise use start date
+                    end_date = date_obj.get("end")
+                    start_date = date_obj.get("start")
 
-        if prop_type == "rich_text":
-            return self._extract_rich_text(prop_data)
+                    # Use end date if available, otherwise fall back to start date
+                    date_to_use = end_date if end_date else start_date
 
-        if prop_type == "number":
-            return str(prop_data) if prop_data is not None else None
+                    if date_to_use:
+                        # Extract year from date string (format: "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM:SS")
+                        # Take first 4 characters which represent the year
+                        year = date_to_use[:4] if len(date_to_use) >= 4 else None
+                        if year:
+                            value = year
 
-        if prop_type == "select":
-            return prop_data.get("name") if prop_data else None
+            elif prop_type == "relation":
+                relations = prop.get("relation", [])
+                if relations:
+                    value = []
+                    for rel in relations:
+                        page_id = rel.get("id")
+                        name = self._get_page_name(page_id)
+                        if name:
+                            value.append(name)
 
-        if prop_type == "multi_select":
-            if isinstance(prop_data, list):
-                names = [item.get("name") for item in prop_data if item.get("name")]
-                return ", ".join(names) if names else None
-            return None
+            elif prop_type == "multi_select":
+                items = prop.get("multi_select", [])
+                value = [item["name"] for item in items]
 
-        if prop_type == "date":
-            if prop_data:
-                start = prop_data.get("start", "")
-                end = prop_data.get("end")
-                if end:
-                    return f"{start} - {end}"
-                return start
-            return None
+            elif prop_type == "select":
+                select = prop.get("select")
+                value = select.get("name") if select else None
 
-        if prop_type == "checkbox":
-            return "Yes" if prop_data else "No"
+            # Only add if value exists
+            if value is not None and value != "" and value != []:
+                result[key] = value
 
-        if prop_type == "status":
-            return prop_data.get("name") if prop_data else None
-
-        if prop_type == "email":
-            return prop_data if isinstance(prop_data, str) else None
-
-        if prop_type == "phone_number":
-            return prop_data if isinstance(prop_data, str) else None
-
-        if prop_type == "url":
-            return prop_data if isinstance(prop_data, str) else None
-
-        if prop_type == "people":
-            if isinstance(prop_data, list):
-                names = [
-                    person.get("name", person.get("id", "")) for person in prop_data
-                ]
-                return ", ".join(names) if names else None
-            return None
-
-        if prop_type == "relation":
-            if isinstance(prop_data, list):
-                ids = [item.get("id", "") for item in prop_data if item.get("id")]
-                return ", ".join(ids) if ids else None
-            return None
-
-        if prop_type == "formula":
-            formula_type = prop_data.get("type") if prop_data else None
-            if formula_type and formula_type in prop_data:
-                formula_value = prop_data.get(formula_type)
-                if formula_value is not None:
-                    return str(formula_value)
-            return None
-
-        if prop_type == "rollup":
-            rollup_type = prop_data.get("type") if prop_data else None
-            if rollup_type and rollup_type in prop_data:
-                rollup_value = prop_data.get(rollup_type)
-                if rollup_value is not None:
-                    return str(rollup_value)
-            return None
-
-        return None
-
-    def _extract_rich_text(self, rich_text_list: list[dict[str, Any]]) -> str | None:
-        """
-        Extract plain text from a rich_text array.
-
-        Args:
-            rich_text_list: List of rich text objects from Notion
-
-        Returns:
-            Concatenated plain text or None
-        """
-        if not isinstance(rich_text_list, list):
-            return None
-
-        texts = []
-        for rt in rich_text_list:
-            if rt.get("type") == "text":
-                content = rt.get("text", {}).get("content", "")
-                if content:
-                    texts.append(content)
-            elif rt.get("plain_text"):
-                texts.append(rt.get("plain_text"))
-
-        return "".join(texts) if texts else None
+        return result
 
     @staticmethod
     def _encode_sharing_url(url: str) -> str:
         """
-        Encode a SharePoint sharing URL for the Graph API /shares endpoint.
+        Encode a SharePoint sharing URL for the /shares Graph API endpoint.
 
-        The encoding process:
-        1. Base64 encode the URL
+        Encoding process:
+        1. Encode URL to base64
         2. Convert to base64url (remove padding, replace +/- with -/_)
         3. Prefix with "u!"
 
-        Args:
-            url: The SharePoint sharing URL
-
         Returns:
-            Encoded share token for the Graph API
+            Encoded sharing token for Graph API
         """
         base64_encoded = base64.b64encode(url.encode("utf-8")).decode("utf-8")
         # Convert to base64url format
@@ -496,14 +557,11 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
         self, url: str
     ) -> tuple[DriveItem | None, str | None]:
         """
-        Resolve a SharePoint URL to a DriveItem using the Graph API.
+        Resolve a SharePoint URL to DriveItem using Graph API.
 
-        Handles various URL formats:
+        Handles different URL formats:
         - Sharing links (using /shares/{encoded}/driveItem endpoint)
         - Direct file URLs
-
-        Args:
-            url: The SharePoint URL to resolve
 
         Returns:
             Tuple of (DriveItem, drive_name) or (None, None) if resolution fails
@@ -511,12 +569,12 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
         if not url:
             return None, None
 
-        # Try to resolve via the /shares endpoint (works for sharing links)
+        # Try to resolve via /shares endpoint (works for sharing links)
         try:
             share_token = self._encode_sharing_url(url)
             logger.debug(f"Attempting to resolve URL via /shares endpoint: {url}")
 
-            # Use direct Graph API call since the SDK might not support this well
+            # Use direct Graph API call as SDK might not support this well
             token = self._acquire_graph_token()
             if not token:
                 logger.warning("Failed to acquire Graph token")
@@ -527,7 +585,7 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
                 "Content-Type": "application/json",
             }
 
-            # Get the driveItem from the sharing URL
+            # Get driveItem from sharing URL
             shares_url = (
                 f"https://graph.microsoft.com/v1.0/shares/{share_token}/driveItem"
             )
@@ -541,11 +599,13 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
                     f"Successfully resolved SharePoint URL: {driveitem_data.get('name')}"
                 )
 
-                # Create a DriveItem-like object with the response data
-                # We need to fetch the actual DriveItem via the SDK for proper download
+                # Create DriveItem-like object with response data
+                # We need to fetch the real DriveItem via SDK for proper download
                 drive_id = driveitem_data.get("parentReference", {}).get("driveId")
                 item_id = driveitem_data.get("id")
-                drive_name = driveitem_data.get("parentReference", {}).get("name", "")
+                drive_name = (
+                    driveitem_data.get("parentReference", {}).get("name") or None
+                )
 
                 if drive_id and item_id:
                     try:
@@ -560,7 +620,7 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
                         logger.warning(
                             f"Failed to fetch DriveItem via SDK, using API response: {e}"
                         )
-                        # Return the raw data wrapped in a way we can use
+                        # Return raw data wrapped in a usable way
                         return (
                             self._create_driveitem_from_api_response(driveitem_data),
                             drive_name,
@@ -586,16 +646,10 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
         """
         Create a DriveItem object from API response data.
 
-        This is a workaround when the SDK cannot fetch the item directly.
-
-        Args:
-            data: The API response data
-
-        Returns:
-            DriveItem object or None
+        This is a workaround when SDK cannot fetch the item directly.
         """
         try:
-            # Create a minimal DriveItem using the SDK
+            # Create minimal DriveItem using SDK
             driveitem = DriveItem(self.graph_client)
             driveitem._properties = data
             driveitem.set_property("id", data.get("id"))
@@ -605,7 +659,7 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
                 "lastModifiedDateTime", data.get("lastModifiedDateTime")
             )
 
-            # Handle the download URL
+            # Handle download URL
             if "@microsoft.graph.downloadUrl" in data:
                 if not hasattr(driveitem, "additional_data"):
                     driveitem.additional_data = {}
@@ -619,12 +673,7 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
             return None
 
     def _acquire_graph_token(self) -> str | None:
-        """
-        Acquire an access token for the Graph API.
-
-        Returns:
-            Access token string or None
-        """
+        """Acquire access token for Graph API."""
         if self.msal_app is None:
             return None
 
@@ -633,6 +682,113 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
         )
         return token_response.get("access_token") if token_response else None
 
+    def _extract_sharepoint_metadata_from_file_info(
+        self,
+        file_info: dict[str, Any],
+        drive_name: str | None = None,
+    ) -> dict[str, str | list[str]]:
+        """
+        Extract SharePoint metadata from file_info dict with sharepoint_ prefix.
+
+        Args:
+            file_info: File info dict from Graph API response
+            drive_name: Optional drive name (extracted from parentReference if not provided)
+
+        Returns:
+            Dict of SharePoint metadata with sharepoint_ prefix
+        """
+        metadata: dict[str, str | list[str]] = {}
+
+        # Extract drive name from parentReference if not provided
+        if not drive_name:
+            parent_ref = file_info.get("parentReference", {})
+            if parent_ref:
+                drive_name = parent_ref.get("name") or parent_ref.get("driveId")
+
+        # File extension
+        file_name = file_info.get("name", "")
+        if file_name and "." in file_name:
+            ext = file_name.split(".")[-1].lower()
+            if ext:
+                metadata["sharepoint_file_extension"] = ext
+
+        # File URL
+        web_url = file_info.get("webUrl")
+        if web_url:
+            metadata["sharepoint_file_url"] = web_url
+
+        # Drive name
+        if drive_name:
+            metadata["sharepoint_drive"] = drive_name
+
+        return metadata
+
+    def _extract_sharepoint_metadata(
+        self,
+        driveitem: DriveItem,
+        drive_name: str | None,
+    ) -> dict[str, str | list[str]]:
+        """
+        Extract metadata from SharePoint DriveItem with sharepoint_ prefix.
+
+        Args:
+            driveitem: SharePoint DriveItem object
+            drive_name: Name of the SharePoint drive
+
+        Returns:
+            Dict of SharePoint metadata with sharepoint_ prefix
+        """
+        metadata: dict[str, str | list[str]] = {}
+
+        # File extension
+        if driveitem.name and "." in driveitem.name:
+            ext = driveitem.name.split(".")[-1].lower()
+            if ext:
+                metadata["sharepoint_file_extension"] = ext
+
+        # File URL
+        if driveitem.web_url:
+            metadata["sharepoint_file_url"] = driveitem.web_url
+
+        # Drive name
+        if drive_name:
+            metadata["sharepoint_drive"] = drive_name
+
+        return metadata
+
+    def _combine_metadata(
+        self,
+        notion_metadata: dict[str, str | list[str]],
+        sharepoint_metadata: dict[str, str | list[str]],
+        notion_row: NotionDatabaseRow,
+    ) -> dict[str, str | list[str]]:
+        """
+        Combine Notion and SharePoint metadata, filtering to only include
+        metadata keys specified in METADATA_TO_INCLUDE.
+
+        Metadata is organized as: notion_* fields first, then sharepoint_* fields.
+
+        Args:
+            notion_metadata: Notion metadata with notion_ prefix
+            sharepoint_metadata: SharePoint metadata with sharepoint_ prefix
+            notion_row: Notion database row object
+
+        Returns:
+            Dict of combined metadata filtered by METADATA_TO_INCLUDE
+        """
+        combined: dict[str, str | list[str]] = {}
+
+        # Notion metadata first (already has notion_ prefix)
+        combined.update(notion_metadata)
+
+        # SharePoint metadata second (already has sharepoint_ prefix)
+        combined.update(sharepoint_metadata)
+
+        # Filter to only include metadata keys in METADATA_TO_INCLUDE
+        return {
+            key: value for key, value in combined.items() if key in METADATA_TO_INCLUDE
+        }
+
     def _convert_to_document(
         self,
         driveitem: DriveItem,
@@ -640,18 +796,13 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
         notion_row: NotionDatabaseRow,
     ) -> Document | None:
         """
-        Convert a SharePoint DriveItem to a Document with Notion metadata.
-
-        Args:
-            driveitem: The SharePoint DriveItem
-            drive_name: Name of the SharePoint drive
-            notion_row: The Notion database row with metadata
+        Convert a SharePoint DriveItem to Document with Notion metadata.
 
         Returns:
             Document object or None if conversion fails
         """
         try:
-            # Use the existing conversion function
+            # Use existing conversion function
             doc = _convert_driveitem_to_document_with_permissions(
                 driveitem=driveitem,
                 drive_name=drive_name or "",
@@ -661,12 +812,22 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
             )
 
             if doc:
-                # Enrich with Notion metadata
-                doc.metadata.update(notion_row.metadata)
-                doc.metadata["notion_row_id"] = notion_row.id
-                doc.metadata["notion_url"] = notion_row.notion_url
+                doc.source = DocumentSource.NOTION_SHAREPOINT
 
-                # Use Notion row ID as part of the document ID to ensure uniqueness
+                # Extract SharePoint metadata
+                sharepoint_metadata = self._extract_sharepoint_metadata(
+                    driveitem=driveitem,
+                    drive_name=drive_name,
+                )
+
+                # Combine metadata: Notion first, then SharePoint
+                combined_metadata = self._combine_metadata(
+                    notion_metadata=notion_row.metadata,
+                    sharepoint_metadata=sharepoint_metadata,
+                    notion_row=notion_row,
+                )
+
+                doc.metadata = combined_metadata
                 doc.id = f"notion_sp_{notion_row.id}"
 
                 return doc
@@ -688,15 +849,11 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
 
         This is a fallback method when DriveItem resolution fails but we have a direct URL.
 
-        Args:
-            url: Direct download URL
-            notion_row: The Notion database row with metadata
-
         Returns:
             Document object or None if processing fails
         """
         try:
-            # Get the access token
+            # Get access token
             token = self._acquire_graph_token()
             if not token:
                 logger.warning("Failed to acquire Graph token for direct download")
@@ -802,27 +959,35 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
                 logger.warning(f"No content extracted from: {file_name}")
                 return None
 
-            # Build metadata
-            metadata = dict(notion_row.metadata)
-            metadata["notion_row_id"] = notion_row.id
-            metadata["notion_url"] = notion_row.notion_url
-            metadata["sharepoint_url"] = url
+            # Extract SharePoint metadata using helper method
+            sharepoint_metadata = self._extract_sharepoint_metadata_from_file_info(
+                file_info=file_info
+            )
 
-            # Parse last modified time
-            last_modified = file_info.get("lastModifiedDateTime")
+            # Combine metadata: Notion first, then SharePoint
+            combined_metadata = self._combine_metadata(
+                notion_metadata=notion_row.metadata,
+                sharepoint_metadata=sharepoint_metadata,
+                notion_row=notion_row,
+            )
+
+            # Parse last modified time for doc_updated_at
             doc_updated_at = None
+            last_modified = file_info.get("lastModifiedDateTime")
             if last_modified:
                 doc_updated_at = datetime.fromisoformat(
                     last_modified.replace("Z", "+00:00")
                 )
 
+            doc_id = f"notion_sp_{notion_row.id}"
+
             return Document(
-                id=f"notion_sp_{notion_row.id}",
+                id=doc_id,
                 sections=sections,
-                source=DocumentSource.SHAREPOINT,
+                source=DocumentSource.NOTION_SHAREPOINT,
                 semantic_identifier=file_name,
                 doc_updated_at=doc_updated_at,
-                metadata=metadata,
+                metadata=combined_metadata,
             )
 
         except Exception as e:
@@ -830,19 +995,14 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
             return None
 
     def load_from_state(self) -> GenerateDocumentsOutput:
-        """
-        Load all documents from the Notion database.
-
-        Yields:
-            Batches of Document objects
-        """
+        """Load all documents from the Notion database."""
         yield from self._generate_documents()
 
     def poll_source(
         self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
     ) -> GenerateDocumentsOutput:
         """
-        Poll for updated documents within a time range.
+        Poll for documents updated within a time range.
 
         Args:
             start: Start time (seconds since epoch)
@@ -885,7 +1045,7 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
                 f"Processing Notion row {notion_row.id} with URL: {notion_row.sharepoint_url}"
             )
 
-            # Try to resolve the URL to a DriveItem
+            # Try to resolve URL to DriveItem
             driveitem, drive_name = self._resolve_sharepoint_url_to_driveitem(
                 notion_row.sharepoint_url
             )
@@ -919,7 +1079,7 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
 
 
 if __name__ == "__main__":
-    # Test the connector
+    # Test connector
     connector = NotionSharepointConnector(
         notion_database_id=os.environ.get("NOTION_DATABASE_ID", ""),
         link_property_name=os.environ.get("NOTION_LINK_PROPERTY", "Link"),
