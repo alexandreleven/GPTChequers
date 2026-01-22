@@ -579,8 +579,8 @@ class ElasticsearchIndex(OldDocumentIndex):
                     f"semantic_identifier^{title_boost * text_match_boost}",
                     f"content^{content_boost * text_match_boost}",
                 ],
-                "type": "best_fields",
-                "tie_breaker": 0.3,
+                "type": "most_fields",
+                "operator": "or",
             }
         }
 
