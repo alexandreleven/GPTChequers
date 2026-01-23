@@ -48,12 +48,10 @@ def query_elasticsearch(
     Args:
         query_params: A mapping containing:
             - index: The name of the index to query
-            - dsl_query: The Elasticsearch DSL query object
-            - num_to_retrieve: The number of results to retrieve
-            - offset: The offset for pagination
+            - size: The number of results to retrieve
+            - from: The offset for pagination
             - _source: (optional) The _source parameter
-            - knn: (optional) The knn parameter
-            - rank: (optional) The rank parameter
+            - retriever: (optional) The retriever parameter with RRF configuration
 
     Returns:
         A list of InferenceChunkUncleaned objects representing the search results.

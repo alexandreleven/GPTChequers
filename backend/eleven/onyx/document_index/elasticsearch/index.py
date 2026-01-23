@@ -579,8 +579,8 @@ class ElasticsearchIndex(DocumentIndex):
                     f"semantic_identifier^{title_boost * text_match_boost}",
                     f"content^{content_boost * text_match_boost}",
                 ],
-                "type": "most_fields",
-                "operator": "or",
+                "type": "best_fields",
+                "tie_breaker": 0.3,
             }
         }
 
@@ -666,12 +666,26 @@ class ElasticsearchIndex(DocumentIndex):
         # Build the admin search query
         query_body = build_admin_search_query(query, filter_clauses)
 
-        # Prepare parameters for query_elasticsearch
+        # Standard retriever with admin search query
+        standard_retriever = {
+            "standard": {
+                "query": query_body,
+            }
+        }
+
+        # Elasticsearch search params (STANDARD)
         params = {
             "index": self.index_name,
-            "dsl_query": query_body,
-            "num_to_retrieve": num_to_retrieve,
-            "offset": offset,
+            "size": num_to_retrieve,
+            "from": offset,
+            "_source": {"excludes": ["vector"]},
+            "retriever": {
+                "rrf": {
+                    "retrievers": [standard_retriever],
+                    "rank_window_size": num_to_retrieve * 2,
+                    "rank_constant": 20,
+                }
+            },
         }
 
         # Retrieve and clean chunks
@@ -706,12 +720,26 @@ class ElasticsearchIndex(DocumentIndex):
         # Build the random search query
         query_body = build_random_search_query(filter_clauses)
 
-        # Prepare parameters for query_elasticsearch
+        # Standard retriever with random search query
+        standard_retriever = {
+            "standard": {
+                "query": query_body,
+            }
+        }
+
+        # Elasticsearch search params (STANDARD)
         params = {
             "index": self.index_name,
-            "dsl_query": query_body,
-            "num_to_retrieve": num_to_retrieve,
-            "offset": 0,
+            "size": num_to_retrieve,
+            "from": 0,
+            "_source": {"excludes": ["vector"]},
+            "retriever": {
+                "rrf": {
+                    "retrievers": [standard_retriever],
+                    "rank_window_size": num_to_retrieve * 2,
+                    "rank_constant": 20,
+                }
+            },
         }
 
         # Retrieve and clean chunks
