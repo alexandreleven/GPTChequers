@@ -70,7 +70,7 @@ from onyx.document_index.document_index_utils import (
     get_document_chunk_ids,
 )
 from onyx.document_index.interfaces import DocMetadataAwareIndexChunk
-from onyx.document_index.interfaces import DocumentIndex
+from onyx.document_index.interfaces import DocumentIndex as OldDocumentIndex
 from onyx.document_index.interfaces import DocumentInsertionRecord
 from onyx.document_index.interfaces import EnrichedDocumentIndexingInfo
 from onyx.document_index.interfaces import IndexBatchParams
@@ -87,7 +87,7 @@ from shared_configs.model_server_models import Embedding
 logger = setup_logger()
 
 
-class ElasticsearchIndex(DocumentIndex):
+class ElasticsearchIndex(OldDocumentIndex):
     """Elasticsearch implementation of DocumentIndex.
 
     This class provides document indexing, retrieval, and management operations
