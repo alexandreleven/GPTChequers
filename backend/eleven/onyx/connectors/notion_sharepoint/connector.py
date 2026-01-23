@@ -13,6 +13,7 @@ Handles different SharePoint URL formats:
 import base64
 import io
 import os
+import re
 from collections.abc import Generator
 from datetime import datetime
 from typing import Any
@@ -221,74 +222,6 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
         except Exception:
             return None
 
-    def _fetch_notion_page_title(self, page_id: str) -> tuple[str | None, str | None]:
-        """
-        Fetch a Notion page title by its ID.
-
-        Returns:
-            Tuple of (title, error_reason) where error_reason is None on success,
-            or a string describing the error (e.g., "no access", "not found")
-        """
-        # Check cache first
-        if page_id in self._notion_page_title_cache:
-            return self._notion_page_title_cache[page_id]
-
-        try:
-            url = f"https://api.notion.com/v1/pages/{page_id}"
-            response = rl_requests.get(
-                url,
-                headers=self.notion_headers,
-                timeout=_NOTION_CALL_TIMEOUT,
-            )
-            response.raise_for_status()
-            page_data = response.json()
-
-            # Extract title from properties - look for title property
-            properties = page_data.get("properties", {})
-            for prop_name, prop_value in properties.items():
-                if prop_value.get("type") == "title":
-                    title_data = prop_value.get("title", [])
-                    if title_data:
-                        # Extract text from rich text
-                        title_parts = []
-                        for text_obj in title_data:
-                            if text_obj.get("type") == "text":
-                                text_content = text_obj.get("text", {}).get(
-                                    "content", ""
-                                )
-                                if text_content:
-                                    title_parts.append(text_content)
-                        if title_parts:
-                            title = "".join(title_parts)
-                            self._notion_page_title_cache[page_id] = (title, None)
-                            return title, None
-
-            # Fallback: try to get from object title if available
-            if "title" in page_data:
-                title = page_data["title"]
-                self._notion_page_title_cache[page_id] = (title, None)
-                return title, None
-
-        except Exception as e:
-            # Determine error type
-            error_msg = str(e).lower()
-            if "404" in error_msg or "not found" in error_msg:
-                reason = "not found"
-            elif (
-                "403" in error_msg or "forbidden" in error_msg or "access" in error_msg
-            ):
-                reason = "no access"
-            else:
-                reason = "error"
-
-            # Cache error to avoid retrying
-            self._notion_page_title_cache[page_id] = (None, reason)
-            return None, reason
-
-        # Cache None if no title found
-        self._notion_page_title_cache[page_id] = (None, "no title")
-        return None, "no title"
-
     def _get_database_schema(self) -> dict[str, str]:
         """Get database schema to identify relation properties."""
         if self._cached_schema is not None:
@@ -467,12 +400,10 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
 
             prop_type = prop.get("type")
 
-            # Clean property name: remove common emojis, lowercase, replace spaces with underscores
+            # Clean property name: remove emojis, lowercase, replace spaces with underscores
             key = f"notion_{name.lower()}"
-            # Remove common emojis that may appear in Notion property names
-            emojis_to_remove = ["💼", "📠", "🔑", "⚠️", "⚡", "🐍", "👏", "🎓"]
-            for emoji in emojis_to_remove:
-                key = key.replace(emoji, "")
+            # Remove all emojis
+            key = re.sub(r"[\U00010000-\U0010FFFF]", "", key)
             key = key.replace(" ", "_").strip("_")
 
             # Remove multiple consecutive underscores
@@ -491,8 +422,8 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
                 texts = prop.get("title", [])
                 value = "".join([t["plain_text"] for t in texts])
 
-            # elif prop_type == "url":
-            #     value = prop.get("url")
+            elif prop_type == "url":
+                value = prop.get("url")
 
             elif prop_type == "date":
                 date_obj = prop.get("date")
