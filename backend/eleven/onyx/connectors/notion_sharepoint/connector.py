@@ -25,7 +25,7 @@ from office365.onedrive.driveitems.driveItem import DriveItem  # type: ignore[im
 from pydantic import BaseModel
 from retry import retry
 
-from eleven.onyx.configs.app_configs import METADATA_TO_INCLUDE
+from eleven.onyx.configs.app_configs import NOTION_METADATA_TO_INCLUDE
 from onyx.configs.app_configs import INDEX_BATCH_SIZE
 from onyx.configs.app_configs import REQUEST_TIMEOUT_SECONDS
 from onyx.configs.app_configs import SHAREPOINT_CONNECTOR_SIZE_THRESHOLD
@@ -400,10 +400,25 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
 
             prop_type = prop.get("type")
 
-            # Clean property name: remove emojis, lowercase, replace spaces with underscores
             key = f"notion_{name.lower()}"
-            # Remove all emojis
-            key = re.sub(r"[\U00010000-\U0010FFFF]", "", key)
+
+            # Remove emojis
+            emoji_pattern = re.compile(
+                "["
+                "\U0001f600-\U0001f64f"  # emoticons
+                "\U0001f300-\U0001f5ff"  # symbols & pictographs
+                "\U0001f680-\U0001f6ff"  # transport & map symbols
+                "\U0001f1e0-\U0001f1ff"  # flags
+                "\U00002700-\U000027bf"  # dingbats
+                "\U0001f900-\U0001f9ff"  # supplemental symbols and pictographs
+                "\U00002600-\U000026ff"  # miscellaneous symbols
+                "\U00002b00-\U00002bff"  # miscellaneous symbols and arrows
+                "]+",
+                flags=re.UNICODE,
+            )
+            key = emoji_pattern.sub(r"", key)
+
+            # Replace spaces with underscores and strip trailing underscores
             key = key.replace(" ", "_").strip("_")
 
             # Remove multiple consecutive underscores
@@ -695,7 +710,7 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
     ) -> dict[str, str | list[str]]:
         """
         Combine Notion and SharePoint metadata, filtering to only include
-        metadata keys specified in METADATA_TO_INCLUDE.
+        metadata keys specified in NOTION_METADATA_TO_INCLUDE.
 
         Metadata is organized as: notion_* fields first, then sharepoint_* fields.
 
@@ -705,7 +720,7 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
             notion_row: Notion database row object
 
         Returns:
-            Dict of combined metadata filtered by METADATA_TO_INCLUDE
+            Dict of combined metadata filtered by NOTION_METADATA_TO_INCLUDE
         """
         combined: dict[str, str | list[str]] = {}
 
@@ -715,10 +730,20 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
         # SharePoint metadata second (already has sharepoint_ prefix)
         combined.update(sharepoint_metadata)
 
-        # Filter to only include metadata keys in METADATA_TO_INCLUDE
-        return {
-            key: value for key, value in combined.items() if key in METADATA_TO_INCLUDE
-        }
+        # Filter to only include metadata keys in
+        # Parse  as comma-separated list
+        if NOTION_METADATA_TO_INCLUDE:
+            allowed_keys = {
+                key.strip()
+                for key in NOTION_METADATA_TO_INCLUDE.split(",")
+                if key.strip()
+            }
+            return {
+                key: value for key, value in combined.items() if key in allowed_keys
+            }
+        else:
+            # If NOTION_METADATA_TO_INCLUDE is empty, return all metadata
+            return combined
 
     def _convert_to_document(
         self,

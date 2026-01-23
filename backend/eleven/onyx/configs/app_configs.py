@@ -14,4 +14,4 @@ ELASTICSEARCH_REQUEST_TIMEOUT = os.environ.get("ELASTICSEARCH_REQUEST_TIMEOUT", 
 MANAGED_ELASTICSEARCH = os.environ.get("MANAGED_ELASTICSEARCH", "").lower() == "true"
 
 # Metadata keys to include during document indexing
-METADATA_TO_INCLUDE = os.environ.get("METADATA_TO_INCLUDE", "")
+NOTION_METADATA_TO_INCLUDE = os.environ.get("NOTION_METADATA_TO_INCLUDE", "")
