@@ -128,7 +128,6 @@ def build_elastic_filters(
                 f"Expanded min_year range from {min_selected_year} to {current_year}: {all_years}"
             )
 
-        # Si nous avons des groupes de tags
         if tag_groups:
             # Special handling for transaction and follow_up fields (OR relationship)
             special_fields = OR_LOGIC_FIELDS
