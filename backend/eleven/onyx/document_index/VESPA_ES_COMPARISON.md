@@ -12,15 +12,16 @@ This document compares Elasticsearch and Vespa implementations in the Onyx codeb
   - `hybrid_retrieval()`: Hybrid search using RRF
   - `id_based_retrieval()`: Retrieve chunks by document ID
   - `update()`: Update document fields
-- `ElasticsearchSchema` (`backend/eleven/onyx/document_index/elasticsearch/schema.py`): Schema definition
-  - `get_document_schema()`: Generate mappings
-  - `get_index_settings()`: Index settings
-- `prepare_elasticsearch_document()` (`backend/eleven/onyx/document_index/elasticsearch/indexing_utils.py`): Prepare chunks for indexing
+  - `ensure_indices_exist()`: Create indices using `MAPPING_TEMPLATE` from `elasticsearch_constants.py`
+- `ElasticsearchSchema` (`backend/eleven/onyx/document_index/elasticsearch/schema.py`): Schema definition class (not currently used in production; mapping is defined in `elasticsearch_constants.py`)
+  - `get_document_schema()`: Generate mappings (not used)
+  - `get_index_settings()`: Index settings (not used)
+- `prepare_elasticsearch_document()` (`backend/eleven/onyx/document_index/elasticsearch/indexing_utils.py`): Format chunks for indexing (transforms `DocMetadataAwareIndexChunk` to Elasticsearch document structure - this is where document formatting happens, not in `schema.py`)
 - `build_elastic_filters()` (`backend/eleven/onyx/document_index/elasticsearch/shared_utils/elasticsearch_request_builders.py`): Build filter clauses
 - `query_elasticsearch()` (`backend/eleven/onyx/document_index/elasticsearch/chunk_retrieval.py`): Execute search queries
 
-**Constants:**
-- `backend/eleven/onyx/document_index/elasticsearch/elasticsearch_constants.py`: Field names and settings
+**Constants & Mapping:**
+- `backend/eleven/onyx/document_index/elasticsearch/elasticsearch_constants.py`: Field names, index settings, and `MAPPING_TEMPLATE` (the actual mapping used in production)
 
 ### Vespa Implementation
 
@@ -50,7 +51,7 @@ This document compares Elasticsearch and Vespa implementations in the Onyx codeb
 
 #### Index Creation
 
-Elasticsearch requires explicit mappings (schema) and settings when creating an index. In this codebase, mappings are defined in Python (`backend/eleven/onyx/document_index/elasticsearch/schema.py`).
+Elasticsearch requires explicit mappings (schema) and settings when creating an index. While `ElasticsearchSchema` exists in `backend/eleven/onyx/document_index/elasticsearch/schema.py`, it is not currently used in production. Instead, mappings are defined in `MAPPING_TEMPLATE` (`backend/eleven/onyx/document_index/elasticsearch/elasticsearch_constants.py`) and used when creating indices via `ElasticsearchIndex.ensure_indices_exist()`.
 
 **Important Settings:**
 - `number_of_shards`: How many shards to split data across (affects parallel query performance)
@@ -77,79 +78,76 @@ Mappings define field types and how they're indexed. Set at index creation, can 
 - `dense_vector`: Vector embeddings for similarity search
 - `nested`: Complex objects with relationships
 
-**Current Mapping (from `schema.py`):**
-```json
-mappings = {
-            "properties": {
-                # Core document fields
-                TENANT_ID: {"type": "keyword"},
-                DOCUMENT_ID: {"type": "keyword"},
-                CHUNK_ID: {"type": "integer"},
-                BLURB: {"type": "text"},
-                CONTENT: {"type": "text"},
-                SOURCE_TYPE: {"type": "keyword"},
-                SOURCE_LINKS: {"type": "object"},
-                SEMANTIC_IDENTIFIER: {"type": "text"},
-                TITLE: {"type": "text"},
-                SECTION_CONTINUATION: {"type": "boolean"},
-                # Vector embeddings for hybrid search
-                EMBEDDINGS: {
-                    "type": "dense_vector",
-                    "dims": vector_dimension,
-                    "index": True,
-                    "similarity": "cosine",
-                },
-                TITLE_EMBEDDING: {
-                    "type": "dense_vector",
-                    "dims": vector_dimension,
-                    "index": True,
-                    "similarity": "cosine",
-                },
-                SKIP_TITLE_EMBEDDING: {"type": "boolean"},
-                # Access control fields
-                ACCESS_CONTROL_LIST: {
-                    "type": "nested",
-                    "properties": {
-                        "value": {"type": "keyword"},
-                        "weight": {"type": "integer"},
-                    },
-                },
-                DOCUMENT_SETS: {
-                    "type": "nested",
-                    "properties": {
-                        "value": {"type": "keyword"},
-                        "weight": {"type": "integer"},
-                    },
-                },
-                USER_PROJECT: {"type": "integer"},
-                HIDDEN: {"type": "boolean"},
-                # Document relationships and metadata
-                LARGE_CHUNK_REFERENCE_IDS: {"type": "integer"},
-                METADATA: {"type": "object"},
-                METADATA_LIST: {"type": "keyword"},
-                METADATA_SUFFIX: {"type": "keyword"},
-                # Boosting and ranking fields
-                BOOST: {"type": "float"},
-                RECENCY_BIAS: {"type": "float"},
-                DOC_UPDATED_AT: {"type": "date", "format": "epoch_second"},
-                # Ownership fields
-                PRIMARY_OWNERS: {"type": "keyword"},
-                SECONDARY_OWNERS: {"type": "keyword"},
-                # Display fields
-                CONTENT_SUMMARY: {"type": "text"},
-                IMAGE_FILE_NAME: {"type": "keyword"},
-                # Contextual RAG fields
-                DOC_SUMMARY: {"type": "text"},
-                CHUNK_CONTEXT: {"type": "text"},
-            }
-        }
+**Current Mapping:**
 
+While `ElasticsearchSchema` in `backend/eleven/onyx/document_index/elasticsearch/schema.py` provides a `get_document_schema()` method, it is not currently used. The actual mapping is defined in `MAPPING_TEMPLATE` (`backend/eleven/onyx/document_index/elasticsearch/elasticsearch_constants.py`). Field dimensions (`VARIABLE_DIM`) are replaced with actual embedding dimensions when creating indices.
+
+```json
+{
+  "mappings": {
+    "properties": {
+      "tenant_id": {"type": "keyword"},
+      "document_id": {"type": "keyword"},
+      "chunk_id": {"type": "integer"},
+      "blurb": {"type": "text"},
+      "content": {"type": "text"},
+      "source_type": {"type": "keyword"},
+      "source_links": {"type": "object"},
+      "semantic_identifier": {"type": "text"},
+      "title": {"type": "text"},
+      "section_continuation": {"type": "boolean"},
+      "embeddings": {
+        "type": "dense_vector",
+        "dims": "VARIABLE_DIM",
+        "index": true,
+        "similarity": "cosine"
+      },
+      "title_embedding": {
+        "type": "dense_vector",
+        "dims": "VARIABLE_DIM",
+        "index": true,
+        "similarity": "cosine"
+      },
+      "skip_title": {"type": "boolean"},
+      "access_control_list": {
+        "type": "nested",
+        "properties": {
+          "value": {"type": "keyword"},
+          "weight": {"type": "integer"}
+        }
+      },
+      "document_sets": {
+        "type": "nested",
+        "properties": {
+          "value": {"type": "keyword"},
+          "weight": {"type": "integer"}
+        }
+      },
+      "large_chunk_reference_ids": {"type": "integer"},
+      "metadata": {"type": "object"},
+      "metadata_list": {"type": "keyword"},
+      "metadata_suffix": {"type": "keyword"},
+      "boost": {"type": "float"},
+      "doc_updated_at": {"type": "date", "format": "epoch_second"},
+      "primary_owners": {"type": "keyword"},
+      "secondary_owners": {"type": "keyword"},
+      "recency_bias": {"type": "float"},
+      "hidden": {"type": "boolean"},
+      "user_project": {"type": "integer"},
+      "content_summary": {"type": "text"},
+      "image_file_name": {"type": "keyword"},
+      "doc_summary": {"type": "text"},
+      "chunk_context": {"type": "text"}
+    }
+  }
+}
+```
 
 #### Document Ingestion
 
 Documents are indexed via Bulk API or single document API. Structure must match the mapping.
 
-**Process:** Documents come from `DocMetadataAwareIndexChunk` objects (`backend/onyx/indexing/models.py`), are prepared via `prepare_elasticsearch_document()` (`backend/eleven/onyx/document_index/elasticsearch/indexing_utils.py`), then indexed in batches using the Bulk API via `ElasticsearchIndex.index()` (`backend/eleven/onyx/document_index/elasticsearch/index.py`). 
+**Process:** Documents come from `DocMetadataAwareIndexChunk` objects (`backend/onyx/indexing/models.py`), are formatted via `prepare_elasticsearch_document()` (`backend/eleven/onyx/document_index/elasticsearch/indexing_utils.py`) which transforms chunks into Elasticsearch document structure. Note: Document formatting happens in `prepare_elasticsearch_document()`, not in `schema.py` (which is not used). Documents are then indexed in batches using the Bulk API via `ElasticsearchIndex.index()` (`backend/eleven/onyx/document_index/elasticsearch/index.py`). 
 
 #### Retrieval (Search)
 
@@ -323,7 +321,7 @@ schema {{ schema_name }} {
 
 **Schema Comparison:** Vespa and Elasticsearch use similar field structures but different syntax. Vespa uses `.sd` files with declarative syntax; Elasticsearch uses JSON mappings. Key difference: Vespa supports `weightedset` for access control (simpler than Elasticsearch's `nested`), and Vespa's schema includes ranking profiles.
 
-**Files:** Vespa schema in `backend/onyx/document_index/vespa/app_config/schemas/danswer_chunk.sd.jinja`. Elasticsearch schema in `backend/eleven/onyx/document_index/elasticsearch/schema.py`.
+**Files:** Vespa schema in `backend/onyx/document_index/vespa/app_config/schemas/danswer_chunk.sd.jinja`. Elasticsearch: `ElasticsearchSchema` exists in `backend/eleven/onyx/document_index/elasticsearch/schema.py` but is not currently used; the actual mapping is in `backend/eleven/onyx/document_index/elasticsearch/elasticsearch_constants.py` (`MAPPING_TEMPLATE`).
 
 **Important Schema Parameters:**
 - `indexing`: What happens during indexing
