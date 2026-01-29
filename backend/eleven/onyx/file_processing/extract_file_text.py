@@ -35,19 +35,15 @@ def _should_use_vision_parsing(file: IO[Any], file_name: str) -> bool:
         True if vision parsing should be enabled
     """
 
-    print("enable vision ? ")
-
     if get_image_extraction_and_analysis_enabled():
-        logger.debug(
-            f"Image extraction and analysis disabled, skipping vision parsing for {file_name}"
-        )
+        logger.debug("Image extraction and analysis disabled, skipping vision parsing")
         return True
 
     # Slides documents always use vision parsing for slide extraction
     if not is_slides_document(file_name):
         return True
 
-    return True
+    return False
 
 
 def _parse_text_with_vision(
