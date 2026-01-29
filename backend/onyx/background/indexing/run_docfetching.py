@@ -255,12 +255,16 @@ def run_docfetching_entrypoint(
     tenant_id: str,
     connector_credential_pair_id: int,
     is_ee: bool = False,
+    is_eleven: bool = False,
     callback: IndexingHeartbeatInterface | None = None,
 ) -> None:
     """Don't swallow exceptions here ... propagate them up."""
 
     if is_ee:
         global_version.set_ee()
+
+    if is_eleven:
+        global_version.set_eleven()
 
     # set the indexing attempt ID so that all log messages from this process
     # will have it added as a prefix
