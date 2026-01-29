@@ -47,7 +47,6 @@ from onyx.connectors.sharepoint.connector import (
 from onyx.connectors.sharepoint.connector import _download_with_cap
 from onyx.connectors.sharepoint.connector import SharepointAuthMethod
 from onyx.connectors.sharepoint.connector import SizeCapExceeded
-from onyx.file_processing.extract_file_text import extract_text_and_images
 from onyx.file_processing.extract_file_text import get_file_ext
 from onyx.file_processing.file_types import OnyxFileExtensions
 from onyx.file_processing.file_types import OnyxMimeTypes
@@ -899,6 +898,15 @@ class NotionSharepointConnector(LoadConnector, PollConnector):
                     )
                     image_section.link = web_url
                     sections.append(image_section)
+
+                from onyx.utils.variable_functionality import (
+                    fetch_versioned_implementation,
+                )
+
+                # Get extract_text_and_images via fetch_versioned_implementation
+                extract_text_and_images = fetch_versioned_implementation(
+                    "onyx.file_processing.extract_file_text", "extract_text_and_images"
+                )
 
                 extraction_result = extract_text_and_images(
                     file=io.BytesIO(content_bytes),
