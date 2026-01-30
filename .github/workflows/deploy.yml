@@ -1,0 +1,273 @@
+# Déploiement via az vm run-command (pas de SSH)
+# Support multi-environnements (dev/staging/prod)
+# Protection prod avec confirmation
+# Récupération des secrets depuis Azure Key Vault
+# Health check post-déploiement
+# Appelé par deployment.yml après un build réussi
+
+name: Deploy to Azure VM
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      image-tag:
+        description: "Docker image tag to deploy"
+        required: true
+        default: "latest"
+        type: string
+      confirm-prod:
+        description: "Type 'DEPLOY-PROD' to confirm production deployment"
+        required: false
+        type: string
+
+  # Can be triggered by deployment.yml on successful build
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      image-tag:
+        required: true
+        type: string
+
+permissions: {}
+
+env:
+  ACR_REGISTRY: ${{ vars.AZURE_REGISTRY_NAME }}.azurecr.io
+  # Azure resource names (configured per environment)
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+
+jobs:
+  # Validate inputs and prepare deployment
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      vm-name: ${{ steps.config.outputs.vm-name }}
+      compose-file: ${{ steps.config.outputs.compose-file }}
+    steps:
+      - name: Validate production deployment
+        if: inputs.environment == 'prod' && github.event_name == 'workflow_dispatch'
+        run: |
+          if [[ "${{ inputs.confirm-prod }}" != "DEPLOY-PROD" ]]; then
+            echo "::error::Production deployment requires confirmation. Type 'DEPLOY-PROD' in the confirm-prod input."
+            exit 1
+          fi
+          echo "Production deployment confirmed."
+
+      - name: Set environment configuration
+        id: config
+        run: |
+          ENV="${{ inputs.environment }}"
+          
+          case "$ENV" in
+            dev)
+              VM_NAME="${{ vars.AZURE_VM_NAME_DEV }}"
+              COMPOSE_FILE="docker-compose.dev.yml"
+              ;;
+            staging)
+              VM_NAME="${{ vars.AZURE_VM_NAME_STAGING }}"
+              COMPOSE_FILE="docker-compose.prod.yml"
+              ;;
+            prod)
+              VM_NAME="${{ vars.AZURE_VM_NAME_PROD }}"
+              COMPOSE_FILE="docker-compose.prod.yml"
+              ;;
+            *)
+              echo "::error::Unknown environment: $ENV"
+              exit 1
+              ;;
+          esac
+          
+          echo "vm-name=$VM_NAME" >> "$GITHUB_OUTPUT"
+          echo "compose-file=$COMPOSE_FILE" >> "$GITHUB_OUTPUT"
+          
+          echo "Environment: $ENV"
+          echo "VM Name: $VM_NAME"
+          echo "Compose File: $COMPOSE_FILE"
+
+  # Deploy to Azure VM
+  deploy:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ vars.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ vars.AZURE_TENANT_ID }}"
+            }
+
+      - name: Fetch secrets from Azure Key Vault
+        id: keyvault
+        run: |
+          # Fetch application secrets from Key Vault
+          KV_NAME="${{ vars.AZURE_KEY_VAULT_NAME }}"
+          
+          # Get secrets (add more as needed)
+          POSTGRES_PASSWORD=$(az keyvault secret show --vault-name "$KV_NAME" --name "postgres-password" --query "value" -o tsv 2>/dev/null || echo "")
+          ENCRYPTION_KEY=$(az keyvault secret show --vault-name "$KV_NAME" --name "encryption-key" --query "value" -o tsv 2>/dev/null || echo "")
+          
+          # Mask secrets in logs
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "::add-mask::$ENCRYPTION_KEY"
+          
+          # Export for later use
+          echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> "$GITHUB_ENV"
+          echo "ENCRYPTION_KEY=$ENCRYPTION_KEY" >> "$GITHUB_ENV"
+
+      - name: Prepare deployment script
+        id: script
+        run: |
+          IMAGE_TAG="${{ inputs.image-tag }}"
+          ACR="${{ env.ACR_REGISTRY }}"
+          
+          cat > /tmp/deploy.sh << 'DEPLOY_SCRIPT'
+          #!/bin/bash
+          set -euo pipefail
+          
+          # Configuration
+          ACR_REGISTRY="__ACR_REGISTRY__"
+          IMAGE_TAG="__IMAGE_TAG__"
+          COMPOSE_FILE="__COMPOSE_FILE__"
+          APP_DIR="/opt/onyx"
+          
+          echo "=== Onyx Deployment ==="
+          echo "Registry: $ACR_REGISTRY"
+          echo "Tag: $IMAGE_TAG"
+          echo "Compose file: $COMPOSE_FILE"
+          
+          # Login to ACR
+          echo "Logging into ACR..."
+          az acr login --name "${ACR_REGISTRY%%.*}"
+          
+          # Navigate to app directory
+          cd "$APP_DIR"
+          
+          # Update image tags in .env
+          echo "Updating image tags..."
+          sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=$IMAGE_TAG|" .env 2>/dev/null || echo "IMAGE_TAG=$IMAGE_TAG" >> .env
+          sed -i "s|^ACR_REGISTRY=.*|ACR_REGISTRY=$ACR_REGISTRY|" .env 2>/dev/null || echo "ACR_REGISTRY=$ACR_REGISTRY" >> .env
+          
+          # Pull new images
+          echo "Pulling images..."
+          docker compose -f "$COMPOSE_FILE" pull
+          
+          # Stop and restart services with new images
+          echo "Restarting services..."
+          docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+          
+          # Cleanup old images
+          echo "Cleaning up old images..."
+          docker image prune -f
+          
+          # Show running containers
+          echo "=== Running Containers ==="
+          docker compose -f "$COMPOSE_FILE" ps
+          
+          echo "=== Deployment Complete ==="
+          DEPLOY_SCRIPT
+          
+          # Replace placeholders
+          sed -i "s|__ACR_REGISTRY__|$ACR|g" /tmp/deploy.sh
+          sed -i "s|__IMAGE_TAG__|$IMAGE_TAG|g" /tmp/deploy.sh
+          sed -i "s|__COMPOSE_FILE__|${{ needs.prepare.outputs.compose-file }}|g" /tmp/deploy.sh
+          
+          cat /tmp/deploy.sh
+
+      - name: Deploy to VM via az vm run-command
+        run: |
+          echo "Deploying to VM: ${{ needs.prepare.outputs.vm-name }}"
+          
+          az vm run-command invoke \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "${{ needs.prepare.outputs.vm-name }}" \
+            --command-id RunShellScript \
+            --scripts @/tmp/deploy.sh \
+            --query "value[0].message" \
+            --output tsv
+
+      - name: Verify deployment
+        run: |
+          echo "Verifying deployment..."
+          
+          # Run health check command on VM
+          az vm run-command invoke \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "${{ needs.prepare.outputs.vm-name }}" \
+            --command-id RunShellScript \
+            --scripts "cd /opt/onyx && docker compose ps --format 'table {{.Name}}\t{{.Status}}'" \
+            --query "value[0].message" \
+            --output tsv
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| VM | ${{ needs.prepare.outputs.vm-name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Tag | ${{ inputs.image-tag }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Registry | ${{ env.ACR_REGISTRY }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+
+  # Post-deployment health check
+  health-check:
+    needs: [prepare, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: success()
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ vars.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ vars.AZURE_TENANT_ID }}"
+            }
+
+      - name: Wait for services to stabilize
+        run: sleep 30
+
+      - name: Check application health
+        run: |
+          # Get VM public IP
+          VM_IP=$(az vm show \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "${{ needs.prepare.outputs.vm-name }}" \
+            --show-details \
+            --query "publicIps" \
+            --output tsv)
+          
+          echo "VM IP: $VM_IP"
+          
+          # Check if web server is responding
+          if curl -sf --max-time 30 "http://${VM_IP}/api/health" > /dev/null 2>&1; then
+            echo "Health check passed!"
+          else
+            echo "::warning::Health check endpoint not responding. This may be normal if the service is still starting."
+          fi

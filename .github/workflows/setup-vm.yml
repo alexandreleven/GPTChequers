@@ -1,0 +1,263 @@
+name: Setup VM for Onyx
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      install-docker:
+        description: "Install Docker and Docker Compose"
+        required: false
+        default: true
+        type: boolean
+      setup-acr-login:
+        description: "Configure ACR login for VM"
+        required: false
+        default: true
+        type: boolean
+      clone-compose-files:
+        description: "Clone docker-compose files to VM"
+        required: false
+        default: true
+        type: boolean
+
+permissions: {}
+
+env:
+  ACR_REGISTRY: ${{ vars.AZURE_REGISTRY_NAME }}.azurecr.io
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  APP_DIR: /opt/onyx
+
+jobs:
+  get-vm-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      vm-name: ${{ steps.config.outputs.vm-name }}
+    steps:
+      - name: Get VM name for environment
+        id: config
+        run: |
+          ENV="${{ inputs.environment }}"
+          case "$ENV" in
+            dev)
+              VM_NAME="${{ vars.AZURE_VM_NAME_DEV }}"
+              ;;
+            staging)
+              VM_NAME="${{ vars.AZURE_VM_NAME_STAGING }}"
+              ;;
+            prod)
+              VM_NAME="${{ vars.AZURE_VM_NAME_PROD }}"
+              ;;
+          esac
+          echo "vm-name=$VM_NAME" >> "$GITHUB_OUTPUT"
+          echo "VM: $VM_NAME"
+
+  setup-vm:
+    needs: get-vm-config
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId": "${{ vars.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId": "${{ vars.AZURE_TENANT_ID }}"
+            }
+
+      - name: Install Docker on VM
+        if: inputs.install-docker
+        run: |
+          cat > /tmp/install-docker.sh << 'EOF'
+          #!/bin/bash
+          set -euo pipefail
+          
+          echo "=== Installing Docker ==="
+          
+          # Update package index
+          sudo apt-get update
+          
+          # Install prerequisites
+          sudo apt-get install -y \
+            ca-certificates \
+            curl \
+            gnupg \
+            lsb-release
+          
+          # Add Docker's official GPG key
+          sudo install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          sudo chmod a+r /etc/apt/keyrings/docker.gpg
+          
+          # Set up the repository
+          echo \
+            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+            $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          
+          # Install Docker Engine
+          sudo apt-get update
+          sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+          
+          # Enable and start Docker
+          sudo systemctl enable docker
+          sudo systemctl start docker
+          
+          # Add current user to docker group
+          sudo usermod -aG docker $USER
+          
+          echo "Docker version: $(docker --version)"
+          echo "Docker Compose version: $(docker compose version)"
+          echo "=== Docker installation complete ==="
+          EOF
+          
+          az vm run-command invoke \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "${{ needs.get-vm-config.outputs.vm-name }}" \
+            --command-id RunShellScript \
+            --scripts @/tmp/install-docker.sh \
+            --query "value[0].message" \
+            --output tsv
+
+      - name: Setup ACR login on VM
+        if: inputs.setup-acr-login
+        run: |
+          cat > /tmp/setup-acr.sh << 'EOF'
+          #!/bin/bash
+          set -euo pipefail
+          
+          echo "=== Setting up Azure CLI and ACR login ==="
+          
+          # Install Azure CLI if not present
+          if ! command -v az &> /dev/null; then
+            curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          fi
+          
+          # Install ACR credential helper
+          sudo apt-get update
+          sudo apt-get install -y acr-docker-credential-helper || true
+          
+          echo "Azure CLI version: $(az --version | head -n1)"
+          echo "=== ACR setup complete ==="
+          EOF
+          
+          az vm run-command invoke \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "${{ needs.get-vm-config.outputs.vm-name }}" \
+            --command-id RunShellScript \
+            --scripts @/tmp/setup-acr.sh \
+            --query "value[0].message" \
+            --output tsv
+
+      - name: Create app directory and clone compose files
+        if: inputs.clone-compose-files
+        run: |
+          # Prepare compose files to copy
+          mkdir -p /tmp/onyx-files
+          cp deployment/docker_compose/docker-compose.yml /tmp/onyx-files/ 2>/dev/null || true
+          cp deployment/docker_compose/docker-compose.dev.yml /tmp/onyx-files/ 2>/dev/null || true
+          cp deployment/docker_compose/docker-compose.prod.yml /tmp/onyx-files/ 2>/dev/null || true
+          cp deployment/docker_compose/docker-compose.prod.eleven.yml /tmp/onyx-files/ 2>/dev/null || true
+          cp deployment/docker_compose/env.template /tmp/onyx-files/.env.template 2>/dev/null || true
+          cp deployment/docker_compose/env.prod.template /tmp/onyx-files/.env.prod.template 2>/dev/null || true
+          
+          cat > /tmp/setup-app-dir.sh << 'EOF'
+          #!/bin/bash
+          set -euo pipefail
+          
+          APP_DIR="/opt/onyx"
+          
+          echo "=== Setting up application directory ==="
+          
+          # Create app directory
+          sudo mkdir -p "$APP_DIR"
+          sudo chown $USER:$USER "$APP_DIR"
+          
+          echo "Application directory created at $APP_DIR"
+          echo "=== Setup complete ==="
+          EOF
+          
+          az vm run-command invoke \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "${{ needs.get-vm-config.outputs.vm-name }}" \
+            --command-id RunShellScript \
+            --scripts @/tmp/setup-app-dir.sh \
+            --query "value[0].message" \
+            --output tsv
+
+      - name: Create environment file template
+        run: |
+          cat > /tmp/create-env.sh << 'EOF'
+          #!/bin/bash
+          set -euo pipefail
+          
+          APP_DIR="/opt/onyx"
+          
+          cat > "$APP_DIR/.env" << 'ENVFILE'
+          # Onyx Configuration
+          # Generated by setup-vm workflow
+          
+          # Docker Registry
+          ACR_REGISTRY=__ACR_REGISTRY__
+          IMAGE_TAG=latest
+          
+          # Database
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD=CHANGE_ME
+          POSTGRES_DB=onyx
+          
+          # Application
+          AUTH_TYPE=disabled
+          WEB_DOMAIN=localhost
+          
+          # Secrets (fetch from Azure Key Vault in production)
+          # SECRET_KEY=
+          # ENCRYPTION_KEY=
+          
+          ENVFILE
+          
+          sed -i "s|__ACR_REGISTRY__|$1|g" "$APP_DIR/.env"
+          
+          echo "Environment file created at $APP_DIR/.env"
+          echo "Please update the values before deploying."
+          EOF
+          
+          az vm run-command invoke \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "${{ needs.get-vm-config.outputs.vm-name }}" \
+            --command-id RunShellScript \
+            --scripts @/tmp/create-env.sh \
+            --parameters "${{ env.ACR_REGISTRY }}" \
+            --query "value[0].message" \
+            --output tsv
+
+      - name: Setup summary
+        run: |
+          echo "## VM Setup Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Configuration | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| VM | ${{ needs.get-vm-config.outputs.vm-name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker | ${{ inputs.install-docker && 'Installed' || 'Skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ACR Setup | ${{ inputs.setup-acr-login && 'Configured' || 'Skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Compose Files | ${{ inputs.clone-compose-files && 'Copied' || 'Skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. SSH into the VM and update \`/opt/onyx/.env\` with your configuration" >> $GITHUB_STEP_SUMMARY
+          echo "2. Run the deploy workflow to deploy the application" >> $GITHUB_STEP_SUMMARY

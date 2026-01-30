@@ -16,7 +16,7 @@ on:
           - staging
           - prod
 
-# Restrictive default permissions
+# Restrictive default permissions (contents: read required for actions/checkout)
 permissions:
   contents: read
 
