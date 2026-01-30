@@ -52,7 +52,9 @@ RUN apt-get update && \
 # Remove py which is pulled in by retry, py is not needed and is a CVE
 COPY ./requirements/default.txt /tmp/requirements.txt
 COPY ./requirements/ee.txt /tmp/ee-requirements.txt
+COPY ./requirements/eleven.txt /tmp/eleven-requirements.txt
 RUN uv pip install --system --no-cache-dir --upgrade \
+        -r /tmp/eleven-requirements.txt \
         -r /tmp/requirements.txt \
         -r /tmp/ee-requirements.txt && \
     pip uninstall -y py && \
@@ -77,6 +79,9 @@ RUN uv pip install --system --no-cache-dir --upgrade \
         gcc && \
     # Install here to avoid some packages being cleaned up above
     apt-get install -y \
+        libreoffice \
+        libreoffice-writer \
+        libreoffice-impress \
         libxmlsec1-openssl \
         # Install postgresql-client for easy manual tests
         postgresql-client && \
@@ -104,6 +109,10 @@ WORKDIR /app
 
 # Enterprise Version Files
 COPY --chown=onyx:onyx ./ee /app/ee
+
+# Eleven Version Files
+COPY --chown=onyx:onyx ./eleven /app/eleven
+
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Set up application files
