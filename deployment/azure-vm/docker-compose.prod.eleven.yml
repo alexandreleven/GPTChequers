@@ -1,0 +1,283 @@
+# Azure VM deployment for Eleven (no Vespa).
+# Uses pre-built images from Azure ACR only; no build contexts.
+# Nginx and certbot use local ./nginx and ./certbot for a self-contained folder.
+
+name: onyx
+
+services:
+  api_server:
+    image: ${ACR_REGISTRY}/onyx-backend:${IMAGE_TAG:-latest}
+    command: >
+      /bin/sh -c "
+      alembic upgrade head &&
+      echo \"Starting Onyx Api Server\" &&
+      uvicorn onyx.main:app --host 0.0.0.0 --port 8080"
+    depends_on:
+      - relational_db
+      - cache
+      - minio
+      - inference_model_server
+    restart: unless-stopped
+    environment:
+      - AUTH_TYPE=${AUTH_TYPE:-oidc}
+      - POSTGRES_HOST=relational_db
+      - REDIS_HOST=cache
+      - MODEL_SERVER_HOST=${MODEL_SERVER_HOST:-inference_model_server}
+      - USE_IAM_AUTH=${USE_IAM_AUTH}
+      - AWS_REGION_NAME=${AWS_REGION_NAME-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY-}
+      # MinIO configuration
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-http://minio:9000}
+      - S3_AWS_ACCESS_KEY_ID=${S3_AWS_ACCESS_KEY_ID:-minioadmin}
+      - S3_AWS_SECRET_ACCESS_KEY=${S3_AWS_SECRET_ACCESS_KEY:-minioadmin}
+    env_file:
+      - path: .env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+    volumes:
+      - api_server_logs:/var/log/onyx
+
+  background:
+    image: ${ACR_REGISTRY}/onyx-backend:${IMAGE_TAG:-latest}
+    command: >
+      /bin/sh -c "
+      if [ -f /etc/ssl/certs/custom-ca.crt ]; then
+        update-ca-certificates;
+      fi &&
+      /app/scripts/supervisord_entrypoint.sh"
+    depends_on:
+      - relational_db
+      - cache
+      - inference_model_server
+      - indexing_model_server
+    restart: unless-stopped
+    environment:
+      - USE_LIGHTWEIGHT_BACKGROUND_WORKER=${USE_LIGHTWEIGHT_BACKGROUND_WORKER:-true}
+      - AUTH_TYPE=${AUTH_TYPE:-oidc}
+      - POSTGRES_HOST=relational_db
+      - REDIS_HOST=cache
+      - MODEL_SERVER_HOST=${MODEL_SERVER_HOST:-inference_model_server}
+      - INDEXING_MODEL_SERVER_HOST=${INDEXING_MODEL_SERVER_HOST:-indexing_model_server}
+      - USE_IAM_AUTH=${USE_IAM_AUTH}
+      - AWS_REGION_NAME=${AWS_REGION_NAME-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY-}
+      # MinIO configuration
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-http://minio:9000}
+      - S3_AWS_ACCESS_KEY_ID=${S3_AWS_ACCESS_KEY_ID:-minioadmin}
+      - S3_AWS_SECRET_ACCESS_KEY=${S3_AWS_SECRET_ACCESS_KEY:-minioadmin}
+    env_file:
+      - path: .env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - background_logs:/var/log/onyx
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+    # Uncomment the following lines if you need to include a custom CA certificate
+    # This section enables the use of a custom CA certificate
+    # If present, the custom CA certificate is mounted as a volume
+    # The container checks for its existence and updates the system's CA certificates
+    # This allows for secure communication with services using custom SSL certificates
+    # volumes:
+    #   # Maps to the CA_CERT_PATH environment variable in the Dockerfile
+    #   - ${CA_CERT_PATH:-./custom-ca.crt}:/etc/ssl/certs/custom-ca.crt:ro
+
+  web_server:
+    image: ${ACR_REGISTRY}/onyx-web-server:${IMAGE_TAG:-latest}
+    depends_on:
+      - api_server
+    restart: unless-stopped
+    environment:
+      - INTERNAL_URL=http://api_server:8080
+    env_file:
+      - path: .env
+        required: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
+  relational_db:
+    image: postgres:15.2-alpine
+    shm_size: 1g
+    command: -c 'max_connections=250'
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - db_volume:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
+  inference_model_server:
+    image: ${ACR_REGISTRY}/onyx-model-server:${IMAGE_TAG:-latest}
+    command: >
+      /bin/sh -c "if [ \"${DISABLE_MODEL_SERVER:-}\" = \"True\" ] || [ \"${DISABLE_MODEL_SERVER:-}\" = \"true\" ]; then
+        echo 'Skipping service...';
+        exit 0;
+      else
+        exec uvicorn model_server.main:app --host 0.0.0.0 --port 9000;
+      fi"
+    restart: unless-stopped
+    environment:
+      - MIN_THREADS_ML_MODELS=${MIN_THREADS_ML_MODELS:-}
+      # Set to debug to get more fine-grained logs
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      # Not necessary, this is just to reduce download time during startup
+      - model_cache_huggingface:/app/.cache/huggingface/
+      # optional, only for debugging purposes
+      - inference_model_server_logs:/var/log/onyx
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
+  indexing_model_server:
+    image: ${ACR_REGISTRY}/onyx-model-server:${IMAGE_TAG:-latest}
+    command: >
+      /bin/sh -c "if [ \"${DISABLE_MODEL_SERVER:-}\" = \"True\" ] || [ \"${DISABLE_MODEL_SERVER:-}\" = \"true\" ]; then
+        echo 'Skipping service...';
+        exit 0;
+      else
+        exec uvicorn model_server.main:app --host 0.0.0.0 --port 9000;
+      fi"
+    restart: unless-stopped
+    environment:
+      - MIN_THREADS_ML_MODELS=${MIN_THREADS_ML_MODELS:-}
+      - INDEXING_ONLY=True
+      # Set to debug to get more fine-grained logs
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      # Not necessary, this is just to reduce download time during startup
+      - indexing_huggingface_model_cache:/app/.cache/huggingface/
+      # optional, only for debugging purposes
+      - indexing_model_server_logs:/var/log/onyx
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
+  # Nginx: config from ./nginx, certs from ./certbot (self-contained for VM copy).
+  nginx:
+    image: nginx:1.25.5-alpine
+    restart: unless-stopped
+    depends_on:
+      - api_server
+      - web_server
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx:/etc/nginx/conf.d
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+    command: >
+      /bin/sh -c "dos2unix /etc/nginx/conf.d/run-nginx.sh
+      && /etc/nginx/conf.d/run-nginx.sh app.conf.eleven.prod"
+    env_file:
+      - .env.nginx
+    environment:
+      # Nginx proxy timeout settings (in seconds)
+      - NGINX_PROXY_CONNECT_TIMEOUT=${NGINX_PROXY_CONNECT_TIMEOUT:-300}
+      - NGINX_PROXY_SEND_TIMEOUT=${NGINX_PROXY_SEND_TIMEOUT:-300}
+      - NGINX_PROXY_READ_TIMEOUT=${NGINX_PROXY_READ_TIMEOUT:-300}
+
+  # follows https://pentacent.medium.com/nginx-and-lets-encrypt-with-docker-in-less-than-5-minutes-b4b8a60d3a71
+  certbot:
+    image: certbot/certbot
+    restart: unless-stopped
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  minio:
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z-cpuv1
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_DEFAULT_BUCKETS: ${S3_FILE_STORE_BUCKET_NAME:-onyx-file-store-bucket}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  cache:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    tmpfs:
+      - /data
+
+  code-interpreter:
+    image: ${ACR_REGISTRY}/code-interpreter:${CODE_INTERPRETER_IMAGE_TAG:-latest}
+    entrypoint: ["/bin/bash", "-c"]
+    command: >
+      "
+      if [ \"$${CODE_INTERPRETER_BETA_ENABLED}\" = \"True\" ] || [ \"$${CODE_INTERPRETER_BETA_ENABLED}\" = \"true\" ]; then
+        exec bash ./entrypoint.sh code-interpreter-api;
+      else
+        echo 'Skipping code interpreter';
+        exec tail -f /dev/null;
+      fi
+      "
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+
+    # Below is needed for the `docker-out-of-docker` execution mode
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    # uncomment below + comment out the above to use the `docker-in-docker` execution mode
+    # privileged: true
+
+volumes:
+  db_volume:
+  minio_data:
+  # Created by the container itself
+  model_cache_huggingface:
+  indexing_huggingface_model_cache:
+  # for logs that we don't want to lose on container restarts
+  api_server_logs:
+  background_logs:
+  inference_model_server_logs:
+  indexing_model_server_logs:
+
