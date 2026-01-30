@@ -27,7 +27,8 @@ on:
         default: true
         type: boolean
 
-permissions: {}
+permissions: 
+  contents: read
 
 env:
   ACR_REGISTRY: ${{ vars.AZURE_REGISTRY_NAME }}.azurecr.io

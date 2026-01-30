@@ -38,8 +38,9 @@ on:
         required: true
         type: string
 
-permissions: {}
-
+permissions:
+  contents: read
+  
 env:
   ACR_REGISTRY: ${{ vars.AZURE_REGISTRY_NAME }}.azurecr.io
   # Azure resource names (configured per environment)
