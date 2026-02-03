@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Update running stack: log into Azure ACR, pull images, restart services.
-# Run from the directory that contains docker-compose.prod.eleven.yml (e.g. /opt/onyx after copying deployment/azure-vm).
+# Run from the directory that contains docker-compose.prod.yml (e.g. /opt/onyx after copying deployment/azure-vm).
 # Requires: ACR_REGISTRY set in .env (e.g. myregistry.azurecr.io). Azure CLI and login to Azure.
 
 set -euo pipefail
@@ -9,8 +9,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-if [ ! -f "docker-compose.prod.eleven.yml" ]; then
-  echo "Error: docker-compose.prod.eleven.yml not found in $SCRIPT_DIR" >&2
+if [ ! -f "docker-compose.prod.yml" ]; then
+  echo "Error: docker-compose.prod.yml not found in $SCRIPT_DIR" >&2
   exit 1
 fi
 
@@ -31,21 +31,21 @@ ACR_NAME="${ACR_REGISTRY%%.*}"
 
 echo "=== Updating Eleven stack ==="
 echo "Registry: $ACR_REGISTRY"
-echo "Compose file: docker-compose.prod.eleven.yml"
+echo "Compose file: docker-compose.prod.yml"
 
 echo "Logging into ACR..."
 az acr login --name "$ACR_NAME"
 
 echo "Pulling images..."
-docker compose -f docker-compose.prod.eleven.yml pull
+docker compose -f docker-compose.prod.yml pull
 
 echo "Restarting services..."
-docker compose -f docker-compose.prod.eleven.yml up -d --remove-orphans
+docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
 echo "Cleaning up old images..."
 docker image prune -f
 
 echo "=== Running containers ==="
-docker compose -f docker-compose.prod.eleven.yml ps
+docker compose -f docker-compose.prod.yml ps
 
 echo "=== Update complete ==="

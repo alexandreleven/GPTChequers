@@ -1,12 +1,11 @@
-# Azure VM deployment for Eleven (no Vespa).
-# Uses pre-built images from Azure ACR only; no build contexts.
-# Nginx and certbot use local ./nginx and ./certbot for a self-contained folder.
-
 name: onyx
 
 services:
   api_server:
-    image: ${ACR_REGISTRY}/onyx-backend:${IMAGE_TAG:-latest}
+    image: ${ACR_REGISTRY}/onyx-backend:${IMAGE_TAG}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
     command: >
       /bin/sh -c "
       alembic upgrade head &&
@@ -14,6 +13,7 @@ services:
       uvicorn onyx.main:app --host 0.0.0.0 --port 8080"
     depends_on:
       - relational_db
+      - index
       - cache
       - minio
       - inference_model_server
@@ -21,6 +21,7 @@ services:
     environment:
       - AUTH_TYPE=${AUTH_TYPE:-oidc}
       - POSTGRES_HOST=relational_db
+      - VESPA_HOST=index
       - REDIS_HOST=cache
       - MODEL_SERVER_HOST=${MODEL_SERVER_HOST:-inference_model_server}
       - USE_IAM_AUTH=${USE_IAM_AUTH}
@@ -34,6 +35,9 @@ services:
     env_file:
       - path: .env
         required: false
+    # Uncomment the line below to use if IAM_AUTH is true and you are using iam auth for postgres
+    # volumes:
+    #   - ./bundle.pem:/app/bundle.pem:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     logging:
@@ -45,7 +49,10 @@ services:
       - api_server_logs:/var/log/onyx
 
   background:
-    image: ${ACR_REGISTRY}/onyx-backend:${IMAGE_TAG:-latest}
+    image: ${ACR_REGISTRY}/onyx-backend:${IMAGE_TAG}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
     command: >
       /bin/sh -c "
       if [ -f /etc/ssl/certs/custom-ca.crt ]; then
@@ -54,6 +61,7 @@ services:
       /app/scripts/supervisord_entrypoint.sh"
     depends_on:
       - relational_db
+      - index
       - cache
       - inference_model_server
       - indexing_model_server
@@ -62,6 +70,7 @@ services:
       - USE_LIGHTWEIGHT_BACKGROUND_WORKER=${USE_LIGHTWEIGHT_BACKGROUND_WORKER:-true}
       - AUTH_TYPE=${AUTH_TYPE:-oidc}
       - POSTGRES_HOST=relational_db
+      - VESPA_HOST=index
       - REDIS_HOST=cache
       - MODEL_SERVER_HOST=${MODEL_SERVER_HOST:-inference_model_server}
       - INDEXING_MODEL_SERVER_HOST=${INDEXING_MODEL_SERVER_HOST:-indexing_model_server}
@@ -76,6 +85,9 @@ services:
     env_file:
       - path: .env
         required: false
+    # Uncomment the line below to use if IAM_AUTH is true and you are using iam auth for postgres
+    # volumes:
+    #   - ./bundle.pem:/app/bundle.pem:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -95,7 +107,16 @@ services:
     #   - ${CA_CERT_PATH:-./custom-ca.crt}:/etc/ssl/certs/custom-ca.crt:ro
 
   web_server:
-    image: ${ACR_REGISTRY}/onyx-web-server:${IMAGE_TAG:-latest}
+    image: ${ACR_REGISTRY}/onyx-web-server:${IMAGE_TAG}
+    build:
+      context: ../../web
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_POSITIVE_PREDEFINED_FEEDBACK_OPTIONS=${NEXT_PUBLIC_POSITIVE_PREDEFINED_FEEDBACK_OPTIONS:-}
+        - NEXT_PUBLIC_NEGATIVE_PREDEFINED_FEEDBACK_OPTIONS=${NEXT_PUBLIC_NEGATIVE_PREDEFINED_FEEDBACK_OPTIONS:-}
+        - NEXT_PUBLIC_DISABLE_LOGOUT=${NEXT_PUBLIC_DISABLE_LOGOUT:-}
+        - NEXT_PUBLIC_THEME=${NEXT_PUBLIC_THEME:-}
+        - NEXT_PUBLIC_FORGOT_PASSWORD_ENABLED=${NEXT_PUBLIC_FORGOT_PASSWORD_ENABLED:-}
     depends_on:
       - api_server
     restart: unless-stopped
@@ -110,11 +131,52 @@ services:
         max-size: "50m"
         max-file: "6"
 
+  # Uncomment the block below to enable the MCP server for Onyx.
+  # mcp_server:
+  #   image: onyxdotapp/onyx-backend:${IMAGE_TAG}
+  #   build:
+  #     context: ../../backend
+  #     dockerfile: Dockerfile
+  #   command: >
+  #     /bin/sh -c "if [ \"${MCP_SERVER_ENABLED:-}\" != \"True\" ] && [ \"${MCP_SERVER_ENABLED:-}\" != \"true\" ]; then
+  #       echo 'MCP server is disabled (MCP_SERVER_ENABLED=false), skipping...';
+  #       exit 0;
+  #     else
+  #       exec python -m onyx.mcp_server_main;
+  #     fi"
+  #   env_file:
+  #     - path: .env
+  #       required: false
+  #   depends_on:
+  #     - relational_db
+  #     - cache
+  #   restart: "no"
+  #   environment:
+  #     - POSTGRES_HOST=relational_db
+  #     - REDIS_HOST=cache
+  #     # MCP Server Configuration
+  #     - MCP_SERVER_ENABLED=${MCP_SERVER_ENABLED:-false}
+  #     - MCP_SERVER_PORT=${MCP_SERVER_PORT:-8090}
+  #     - MCP_SERVER_CORS_ORIGINS=${MCP_SERVER_CORS_ORIGINS:-}
+  #     - API_SERVER_PROTOCOL=${API_SERVER_PROTOCOL:-http}
+  #     - API_SERVER_HOST=${API_SERVER_HOST:-api_server}
+  #     - API_SERVER_PORT=${API_SERVER_PORT:-8080}
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   logging:
+  #     driver: json-file
+  #     options:
+  #       max-size: "50m"
+  #       max-file: "6"
+  #   volumes:
+  #     - mcp_server_logs:/var/log/onyx
+
   relational_db:
     image: postgres:15.2-alpine
     shm_size: 1g
     command: -c 'max_connections=250'
     restart: unless-stopped
+    # POSTGRES_USER and POSTGRES_PASSWORD should be set in .env file
     env_file:
       - path: .env
         required: false
@@ -127,7 +189,10 @@ services:
         max-file: "6"
 
   inference_model_server:
-    image: ${ACR_REGISTRY}/onyx-model-server:${IMAGE_TAG:-latest}
+    image: ${ACR_REGISTRY}/onyx-model-server:${IMAGE_TAG}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.model_server
     command: >
       /bin/sh -c "if [ \"${DISABLE_MODEL_SERVER:-}\" = \"True\" ] || [ \"${DISABLE_MODEL_SERVER:-}\" = \"true\" ]; then
         echo 'Skipping service...';
@@ -152,7 +217,10 @@ services:
         max-file: "6"
 
   indexing_model_server:
-    image: ${ACR_REGISTRY}/onyx-model-server:${IMAGE_TAG:-latest}
+    image: ${ACR_REGISTRY}/onyx-model-server:${IMAGE_TAG}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.model_server
     command: >
       /bin/sh -c "if [ \"${DISABLE_MODEL_SERVER:-}\" = \"True\" ] || [ \"${DISABLE_MODEL_SERVER:-}\" = \"true\" ]; then
         echo 'Skipping service...';
@@ -166,6 +234,7 @@ services:
       - INDEXING_ONLY=True
       # Set to debug to get more fine-grained logs
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - VESPA_SEARCHER_THREADS=${VESPA_SEARCHER_THREADS:-1}
     volumes:
       # Not necessary, this is just to reduce download time during startup
       - indexing_huggingface_model_cache:/app/.cache/huggingface/
@@ -177,10 +246,28 @@ services:
         max-size: "50m"
         max-file: "6"
 
-  # Nginx: config from ./nginx, certs from ./certbot (self-contained for VM copy).
+  # This container name cannot have an underscore in it due to Vespa expectations of the URL
+  index:
+    image: vespaengine/vespa:8.609.39
+    restart: unless-stopped
+    environment:
+      - VESPA_SKIP_UPGRADE_CHECK=true
+    ports:
+      - "19071:19071"
+      - "8081:8081"
+    volumes:
+      - vespa_volume:/opt/vespa/var
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
   nginx:
     image: nginx:1.25.5-alpine
     restart: unless-stopped
+    # nginx will immediately crash with `nginx: [emerg] host not found in upstream`
+    # if api_server / web_server are not up
     depends_on:
       - api_server
       - web_server
@@ -188,17 +275,25 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx:/etc/nginx/conf.d
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
+      - ../data/nginx:/etc/nginx/conf.d
+      - ../data/certbot/conf:/etc/letsencrypt
+      - ../data/certbot/www:/var/www/certbot
+    # sleep a little bit to allow the web_server / api_server to start up.
+    # Without this we've seen issues where nginx shows no error logs but
+    # does not recieve any traffic
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "6"
+    # The specified script waits for the api_server to start up.
+    # Without this we've seen issues where nginx shows no error logs but
+    # does not recieve any traffic
+    # NOTE: we have to use dos2unix to remove Carriage Return chars from the file
+    # in order to make this work on both Unix-like systems and windows
     command: >
       /bin/sh -c "dos2unix /etc/nginx/conf.d/run-nginx.sh
-      && /etc/nginx/conf.d/run-nginx.sh app.conf.eleven.prod"
+      && /etc/nginx/conf.d/run-nginx.sh app.conf.template.prod"
     env_file:
       - .env.nginx
     environment:
@@ -212,8 +307,8 @@ services:
     image: certbot/certbot
     restart: unless-stopped
     volumes:
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
+      - ../data/certbot/conf:/etc/letsencrypt
+      - ../data/certbot/www:/var/www/certbot
     logging:
       driver: json-file
       options:
@@ -240,12 +335,15 @@ services:
   cache:
     image: redis:7.4-alpine
     restart: unless-stopped
+    # docker silently mounts /data even without an explicit volume mount, which enables
+    # persistence. explicitly setting save and appendonly forces ephemeral behavior.
     command: redis-server --save "" --appendonly no
+    # Use tmpfs to prevent creation of anonymous volumes for /data
     tmpfs:
       - /data
 
   code-interpreter:
-    image: ${ACR_REGISTRY}/code-interpreter:${CODE_INTERPRETER_IMAGE_TAG:-latest}
+    image: onyxdotapp/code-interpreter:${CODE_INTERPRETER_IMAGE_TAG:-latest}
     entrypoint: ["/bin/bash", "-c"]
     command: >
       "
@@ -271,6 +369,7 @@ services:
 
 volumes:
   db_volume:
+  vespa_volume:
   minio_data:
   # Created by the container itself
   model_cache_huggingface:
@@ -280,4 +379,4 @@ volumes:
   background_logs:
   inference_model_server_logs:
   indexing_model_server_logs:
-
+  # mcp_server_logs:

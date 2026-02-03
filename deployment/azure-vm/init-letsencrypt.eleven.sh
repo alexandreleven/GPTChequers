@@ -1,10 +1,7 @@
 #!/bin/bash
 
-# Let's Encrypt setup for Azure/Eleven deployment.
-# Run from deployment/azure-vm/ (or from the same directory on the VM, e.g. /opt/onyx).
-# Uses docker-compose.prod.eleven.yml and local ./certbot for cert data.
-# .env.nginx in this directory must set DOMAIN (and optionally EMAIL).
-
+# .env.nginx file must be present in the same directory as this script and
+# must set DOMAIN (and optionally EMAIL)
 set -o allexport
 source .env.nginx
 set +o allexport
@@ -21,21 +18,21 @@ docker_compose_cmd() {
   fi
 }
 
+# Assign appropriate Docker Compose command
 COMPOSE_CMD=$(docker_compose_cmd)
-COMPOSE_FILE="docker-compose.prod.eleven.yml"
-# Cert data under this folder so the stack stays self-contained when copied to VM
-data_path="./certbot"
 
-# Only add www to domain list if domain wasn't explicitly set as a subdomain
-if [[ ! $DOMAIN == www.* ]]; then
+# Request certificate for DOMAIN only (no www subdomain).
+# Set INCLUDE_WWW=true in .env.nginx to also request www.$DOMAIN.
+if [[ "${INCLUDE_WWW:-false}" == "true" ]] && [[ ! $DOMAIN == www.* ]]; then
     domains=("$DOMAIN" "www.$DOMAIN")
 else
     domains=("$DOMAIN")
 fi
 
 rsa_key_size=4096
-email="$EMAIL"
-staging=0 # Set to 1 when testing to avoid request limits
+data_path="../data/certbot"
+email="$EMAIL" # Adding a valid address is strongly recommended
+staging=1 # Set to 1 if you're testing your setup to avoid hitting request limits
 
 if [ -d "$data_path" ]; then
   read -p "Existing data found for $domains. Continue and replace existing certificate? (y/N) " decision
@@ -43,6 +40,7 @@ if [ -d "$data_path" ]; then
     exit
   fi
 fi
+
 
 if [ ! -e "$data_path/conf/options-ssl-nginx.conf" ] || [ ! -e "$data_path/conf/ssl-dhparams.pem" ]; then
   echo "### Downloading recommended TLS parameters ..."
@@ -55,49 +53,59 @@ fi
 echo "### Creating dummy certificate for $domains ..."
 path="/etc/letsencrypt/live/$domains"
 mkdir -p "$data_path/conf/live/$domains"
-$COMPOSE_CMD -f "$COMPOSE_FILE" run --name onyx --rm --entrypoint "\
+az login --identity
+az acr login --name onyxelevenGPTv2
+$COMPOSE_CMD -f docker-compose.prod.yml run  --name onyx --rm --entrypoint "\
   openssl req -x509 -nodes -newkey rsa:$rsa_key_size -days 1\
     -keyout '$path/privkey.pem' \
     -out '$path/fullchain.pem' \
     -subj '/CN=localhost'" certbot
 echo
 
+
 echo "### Starting nginx ..."
-$COMPOSE_CMD -f "$COMPOSE_FILE" up --force-recreate -d nginx
+$COMPOSE_CMD -f docker-compose.prod.yml up --force-recreate -d nginx
 echo
 
 echo "Waiting for nginx to be ready, this may take a minute..."
 while true; do
+  # Use curl to send a request and capture the HTTP status code
   status_code=$(curl -o /dev/null -s -w "%{http_code}\n" "http://localhost/api/health")
+  
+  # Check if the status code is 200
   if [ "$status_code" -eq 200 ]; then
-    break
+    break  # Exit the loop
   else
     echo "Nginx is not ready yet, retrying in 5 seconds..."
-    sleep 5
+    sleep 5  # Sleep for 5 seconds before retrying
   fi
 done
 
 echo "### Deleting dummy certificate for $domains ..."
-$COMPOSE_CMD -f "$COMPOSE_FILE" run --name onyx --rm --entrypoint "\
+$COMPOSE_CMD -f docker-compose.prod.yml run  --name onyx --rm --entrypoint "\
   rm -Rf /etc/letsencrypt/live/$domains && \
   rm -Rf /etc/letsencrypt/archive/$domains && \
   rm -Rf /etc/letsencrypt/renewal/$domains.conf" certbot
 echo
 
+
 echo "### Requesting Let's Encrypt certificate for $domains ..."
+#Join $domains to -d args
 domain_args=""
 for domain in "${domains[@]}"; do
   domain_args="$domain_args -d $domain"
 done
 
+# Select appropriate email arg
 case "$email" in
   "") email_arg="--register-unsafely-without-email" ;;
   *) email_arg="--email $email" ;;
 esac
 
+# Enable staging mode if needed
 if [ $staging != "0" ]; then staging_arg="--staging"; fi
 
-$COMPOSE_CMD -f "$COMPOSE_FILE" run --name onyx --rm --entrypoint "\
+$COMPOSE_CMD -f docker-compose.prod.yml run --name onyx --rm --entrypoint "\
   certbot certonly --webroot -w /var/www/certbot \
     $staging_arg \
     $email_arg \
@@ -108,7 +116,7 @@ $COMPOSE_CMD -f "$COMPOSE_FILE" run --name onyx --rm --entrypoint "\
 echo
 
 echo "### Renaming certificate directory if needed ..."
-$COMPOSE_CMD -f "$COMPOSE_FILE" run --name onyx --rm --entrypoint "\
+$COMPOSE_CMD -f docker-compose.prod.yml run --name onyx --rm --entrypoint "\
   sh -c 'for domain in $domains; do \
     numbered_dir=\$(find /etc/letsencrypt/live -maxdepth 1 -type d -name \"\$domain-00*\" | sort -r | head -n1); \
     if [ -n \"\$numbered_dir\" ]; then \
@@ -117,4 +125,4 @@ $COMPOSE_CMD -f "$COMPOSE_FILE" run --name onyx --rm --entrypoint "\
   done'" certbot
 
 echo "### Reloading nginx ..."
-$COMPOSE_CMD -f "$COMPOSE_FILE" up --force-recreate -d
+$COMPOSE_CMD -f docker-compose.prod.yml up --force-recreate -d
