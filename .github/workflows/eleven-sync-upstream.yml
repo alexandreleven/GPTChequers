@@ -6,6 +6,7 @@ on:
 # Permissions needed to push branches and create PRs using PR_OPENER
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   sync-upstream-release:
@@ -80,16 +81,39 @@ jobs:
         run: |
           git push -u origin upstream/${{ steps.detect.outputs.tag }}
 
-
       # Step 5: Open a Pull Request from the new branch to main
       - name: Open Pull Request
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.PR_OPENER }}
-          base: main
-          title: "chore: sync upstream release ${{ steps.detect.outputs.tag }}"
-          body: |
-            This PR syncs upstream release **${{ steps.detect.outputs.tag }}**.
+        if: steps.detect.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.PR_OPENER }}
+        run: |
+          BRANCH="upstream/${{ steps.detect.outputs.tag }}"
+          TAG="${{ steps.detect.outputs.tag }}"
+          
+          # Check if PR already exists for this branch
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')
+          
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #$EXISTING_PR already exists for branch $BRANCH"
+          else
+            # Check if workflow files are modified
+            WORKFLOW_CHANGES=$(git diff --name-only main..."$BRANCH" -- '.github/workflows/' | wc -l)
+            
+            LABELS=""
+            if [ "$WORKFLOW_CHANGES" -gt 0 ]; then
+              LABELS="--label workflow-changes"
+              echo "⚠️ Warning: $WORKFLOW_CHANGES workflow file(s) modified by upstream"
+            fi
+            
+            PR_BODY=$(printf "This PR syncs upstream release **%s**.\n\n**Workflow changes:** %s file(s) in \`.github/workflows/\`" "$TAG" "$WORKFLOW_CHANGES")
+
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: sync upstream release $TAG" \
+              --body "$PR_BODY" \
+              $LABELS
+          fi
 
       # Step 6: Create tag in fork
       - name: Create tag in fork
