@@ -63,6 +63,11 @@ export const SERVER_SIDE_ONLY__PAID_ENTERPRISE_FEATURES_ENABLED =
 export const EE_ENABLED =
   process.env.NEXT_PUBLIC_ENABLE_PAID_EE_FEATURES?.toLowerCase() === "true";
 
+// === ELEVEN EDITION START ===
+export const ELEVEN_EDITION_ENABLED =
+  process.env.NEXT_PUBLIC_ENABLE_ELEVEN_EDITION?.toLowerCase() === "true";
+// === ELEVEN EDITION END ===
+
 export const CUSTOM_ANALYTICS_ENABLED = process.env.CUSTOM_ANALYTICS_SECRET_KEY
   ? true
   : false;

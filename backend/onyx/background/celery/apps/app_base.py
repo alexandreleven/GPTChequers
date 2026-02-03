@@ -20,12 +20,17 @@ from sentry_sdk.integrations.celery import CeleryIntegration
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from eleven.onyx.configs.app_configs import DOCUMENT_INDEX_TYPE
+from eleven.onyx.document_index.elasticsearch.utils import (
+    wait_for_elasticsearch_with_timeout,
+)
 from onyx.background.celery.apps.task_formatters import CeleryTaskColoredFormatter
 from onyx.background.celery.apps.task_formatters import CeleryTaskPlainFormatter
 from onyx.background.celery.celery_utils import celery_is_worker_primary
 from onyx.background.celery.celery_utils import make_probe_path
 from onyx.background.celery.tasks.vespa.document_sync import DOCUMENT_SYNC_PREFIX
 from onyx.background.celery.tasks.vespa.document_sync import DOCUMENT_SYNC_TASKSET_KEY
+from onyx.configs.constants import DocumentIndexType
 from onyx.configs.app_configs import ENABLE_OPENSEARCH_FOR_ONYX
 from onyx.configs.constants import ONYX_CLOUD_CELERY_TASK_PREFIX
 from onyx.configs.constants import OnyxRedisLocks
@@ -520,10 +525,19 @@ def wait_for_vespa_or_shutdown(sender: Any, **kwargs: Any) -> None:
         # TODO(andrei): Do some similar liveness checking for OpenSearch.
         return
 
-    if not wait_for_vespa_with_timeout():
-        msg = "Vespa: Readiness probe did not succeed within the timeout. Exiting..."
-        logger.error(msg)
-        raise WorkerShutdown(msg)
+    if DOCUMENT_INDEX_TYPE == DocumentIndexType.ELASTICSEARCH.value:
+        if not wait_for_elasticsearch_with_timeout():
+            msg = "Elasticsearch: Readiness probe did not succeed within the timeout. Exiting..."
+            logger.error(msg)
+            raise WorkerShutdown(msg)
+
+    else:
+        if not wait_for_vespa_with_timeout():
+            msg = (
+                "Vespa: Readiness probe did not succeed within the timeout. Exiting..."
+            )
+            logger.error(msg)
+            raise WorkerShutdown(msg)
 
 
 # File for validating worker liveness

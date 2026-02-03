@@ -52,8 +52,14 @@ import { ValidSources } from "./types";
 import { SourceCategory, SourceMetadata } from "./search/interfaces";
 import { Persona } from "@/app/admin/assistants/interfaces";
 import React from "react";
-import { DOCS_ADMINS_PATH } from "./constants";
+import { DOCS_ADMINS_PATH, ELEVEN_EDITION_ENABLED } from "./constants";
 import { SvgFileText, SvgGlobe } from "@opal/icons";
+// === ELEVEN CONNECTORS START ===
+import {
+  ELEVEN_SOURCE_METADATA,
+  ELEVEN_CONNECTOR_SOURCES,
+} from "@/app/eleven/connectors";
+// === ELEVEN CONNECTORS END ===
 
 interface PartialSourceMetadata {
   icon: React.FC<{ size?: number; className?: string }>;
@@ -433,6 +439,10 @@ export const SOURCE_METADATA_MAP: SourceMap = {
     displayName: "Mock Connector",
     category: SourceCategory.Other,
   },
+
+  // === ELEVEN CONNECTORS START ===
+  ...ELEVEN_SOURCE_METADATA,
+  // === ELEVEN CONNECTORS END ===
 } as SourceMap;
 
 function fillSourceMetadata(
@@ -467,7 +477,12 @@ export function listSourceMetadata(): SourceMetadata[] {
         // use the "regular" slack connector when listing
         source !== "federated_slack" &&
         // user_file is for internal use (projects), not the Add Connector page
-        source !== "user_file"
+        source !== "user_file" &&
+        // === ELEVEN CONNECTORS FILTER START ===
+        // Filter ALL Eleven connectors if Eleven Edition is not enabled
+        (ELEVEN_EDITION_ENABLED ||
+          !ELEVEN_CONNECTOR_SOURCES.includes(source as any))
+      // === ELEVEN CONNECTORS FILTER END ===
     )
     .map(([source, metadata]) => {
       return fillSourceMetadata(metadata, source as ValidSources);

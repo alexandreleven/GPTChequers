@@ -177,6 +177,11 @@ ee = [
     "posthog==3.7.4",
 ]
 
+# Eleven Edition features (ElasticSearch support)
+eleven = [
+    "elasticsearch==8.17.2",
+]
+
 # Model server specific dependencies (ML packages)
 model_server = [
     "accelerate==1.6.0",
