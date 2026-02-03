@@ -193,9 +193,10 @@ jobs:
           build-args: |
             ONYX_VERSION=${{ github.ref_name }}
             NODE_OPTIONS=--max-old-space-size=8192
+            NEXT_PUBLIC_ENABLE_ELEVEN_EDITION=true
           cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.WEB_IMAGE }}:latest
           cache-to: type=inline
-
+# maximecremieux tbc l.196
   # Build and push model-server image
   build-model-server:
     needs: determine-builds

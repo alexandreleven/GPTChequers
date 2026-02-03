@@ -18,6 +18,8 @@ services:
       - inference_model_server
     restart: unless-stopped
     environment:
+      # maximecremieux tbc
+      - ENABLE_ELEVEN_EDITION_FEATURES=${ENABLE_ELEVEN_EDITION_FEATURES:-true}
       - AUTH_TYPE=${AUTH_TYPE:-oidc}
       - POSTGRES_HOST=relational_db
       - REDIS_HOST=cache
@@ -64,6 +66,8 @@ services:
       - indexing_model_server
     restart: unless-stopped
     environment:
+      # maximecremieux tbc
+      - ENABLE_ELEVEN_EDITION_FEATURES=${ENABLE_ELEVEN_EDITION_FEATURES:-true}
       - USE_LIGHTWEIGHT_BACKGROUND_WORKER=${USE_LIGHTWEIGHT_BACKGROUND_WORKER:-true}
       - AUTH_TYPE=${AUTH_TYPE:-oidc}
       - POSTGRES_HOST=relational_db

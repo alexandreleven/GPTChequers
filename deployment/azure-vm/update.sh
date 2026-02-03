@@ -37,7 +37,8 @@ echo "Logging into ACR..."
 az acr login --name "$ACR_NAME"
 
 echo "Pulling images..."
-docker compose -f docker-compose.prod.yml pull
+# --ignore-pull-failures: optional images (e.g. code-interpreter) may not exist in ACR
+docker compose -f docker-compose.prod.yml pull --ignore-pull-failures
 
 echo "Restarting services..."
 docker compose -f docker-compose.prod.yml up -d --remove-orphans
