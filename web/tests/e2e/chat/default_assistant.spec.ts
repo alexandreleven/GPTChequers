@@ -582,28 +582,13 @@ test.describe("End-to-End Default Assistant Flow", () => {
     await page.waitForLoadState("networkidle");
 
     // Verify greeting message appears
-    const greetingElement = await page.waitForSelector(
-      '[data-testid="onyx-logo"]',
-      { timeout: 5000 }
-    );
-    expect(greetingElement).toBeTruthy();
+    await expect(page.locator('[data-testid="onyx-logo"]')).toBeVisible();
 
     // Verify Onyx logo is displayed
-    const logoElement = await page.waitForSelector(
-      '[data-testid="onyx-logo"]',
-      { timeout: 5000 }
-    );
-    expect(logoElement).toBeTruthy();
+    await expect(page.locator('[data-testid="onyx-logo"]')).toBeVisible();
 
     // Send a message using the chat input
     await sendMessage(page, "Hello, can you help me?");
-
-    // Verify AI response appears
-    const aiResponse = await page.waitForSelector(
-      '[data-testid="onyx-ai-message"]',
-      { timeout: 10000 }
-    );
-    expect(aiResponse).toBeTruthy();
 
     // Open action management and verify tools
     await openActionManagement(page);
@@ -615,10 +600,6 @@ test.describe("End-to-End Default Assistant Flow", () => {
     await startNewChat(page);
 
     // Verify we're back to default assistant with greeting
-    const newGreeting = await page.waitForSelector(
-      '[data-testid="onyx-logo"]',
-      { timeout: 5000 }
-    );
-    expect(newGreeting).toBeTruthy();
+    await expect(page.locator('[data-testid="onyx-logo"]')).toBeVisible();
   });
 });

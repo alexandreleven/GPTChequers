@@ -22,6 +22,14 @@ APP_PORT = 8080
 # prefix from requests directed towards the API server. In these cases, set this to `/api`
 APP_API_PREFIX = os.environ.get("API_PREFIX", "")
 
+# Certain services need to make HTTP requests to the API server, such as the MCP server and Discord bot
+API_SERVER_PROTOCOL = os.environ.get("API_SERVER_PROTOCOL", "http")
+API_SERVER_HOST = os.environ.get("API_SERVER_HOST", "127.0.0.1")
+# This override allows self-hosting the MCP server with Onyx Cloud backend.
+API_SERVER_URL_OVERRIDE_FOR_HTTP_REQUESTS = os.environ.get(
+    "API_SERVER_URL_OVERRIDE_FOR_HTTP_REQUESTS"
+)
+
 # Whether to send user metadata (user_id/email and session_id) to the LLM provider.
 # Disabled by default.
 SEND_USER_METADATA_TO_LLM_PROVIDER = (
@@ -856,6 +864,7 @@ AZURE_IMAGE_DEPLOYMENT_NAME = os.environ.get(
 
 # configurable image model
 IMAGE_MODEL_NAME = os.environ.get("IMAGE_MODEL_NAME", "gpt-image-1")
+IMAGE_MODEL_PROVIDER = os.environ.get("IMAGE_MODEL_PROVIDER", "openai")
 
 # Use managed Vespa (Vespa Cloud). If set, must also set VESPA_CLOUD_URL, VESPA_CLOUD_CERT_PATH and VESPA_CLOUD_KEY_PATH
 MANAGED_VESPA = os.environ.get("MANAGED_VESPA", "").lower() == "true"
@@ -1008,3 +1017,8 @@ INSTANCE_TYPE = (
     if os.environ.get("IS_MANAGED_INSTANCE", "").lower() == "true"
     else "cloud" if AUTH_TYPE == AuthType.CLOUD else "self_hosted"
 )
+
+
+## Discord Bot Configuration
+DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
+DISCORD_BOT_INVOKE_CHAR = os.environ.get("DISCORD_BOT_INVOKE_CHAR", "!")
