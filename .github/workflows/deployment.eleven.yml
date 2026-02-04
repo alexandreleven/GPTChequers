@@ -16,9 +16,10 @@ on:
           - staging
           - prod
 
-# Restrictive default permissions (contents: read required for actions/checkout)
+# Restrictive default permissions (contents: read required for actions/checkout and write to improve push speed)
 permissions:
   contents: read
+  actions: write
 
 env:
   # Azure Container Registry
