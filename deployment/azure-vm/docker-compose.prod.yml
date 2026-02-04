@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
     environment:
       # maximecremieux tbc
-      #- ENABLE_ELEVEN_EDITION_FEATURES=${ENABLE_ELEVEN_EDITION_FEATURES:-true}
+      - ENABLE_ELEVEN_EDITION_FEATURES=${ENABLE_ELEVEN_EDITION_FEATURES:-true}
       - AUTH_TYPE=${AUTH_TYPE:-oidc}
       - POSTGRES_HOST=relational_db
       - REDIS_HOST=cache
@@ -67,7 +67,7 @@ services:
     restart: unless-stopped
     environment:
       # maximecremieux tbc
-      #- ENABLE_ELEVEN_EDITION_FEATURES=${ENABLE_ELEVEN_EDITION_FEATURES:-true}
+      - ENABLE_ELEVEN_EDITION_FEATURES=${ENABLE_ELEVEN_EDITION_FEATURES:-true}
       - USE_LIGHTWEIGHT_BACKGROUND_WORKER=${USE_LIGHTWEIGHT_BACKGROUND_WORKER:-true}
       - AUTH_TYPE=${AUTH_TYPE:-oidc}
       - POSTGRES_HOST=relational_db
@@ -118,7 +118,7 @@ services:
         - NEXT_PUBLIC_THEME=${NEXT_PUBLIC_THEME:-}
         - NEXT_PUBLIC_FORGOT_PASSWORD_ENABLED=${NEXT_PUBLIC_FORGOT_PASSWORD_ENABLED:-}
         # maximecremieux tbc
-        #- NEXT_PUBLIC_ENABLE_ELEVEN_EDITION=${NEXT_PUBLIC_ENABLE_ELEVEN_EDITION:-true}
+        - NEXT_PUBLIC_ENABLE_ELEVEN_EDITION=${NEXT_PUBLIC_ENABLE_ELEVEN_EDITION:-true}
     depends_on:
       - api_server
     restart: unless-stopped

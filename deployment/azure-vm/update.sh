@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Update running stack: log into Azure ACR, pull images, restart services.
+# Update the running stack with the latest images from Azure Container Registry (ACR).
+# Authenticates to ACR, pulls registry images only (no local builds), and recreates containers while preserving volumes.
 # Run from the directory that contains docker-compose.prod.yml (e.g. /opt/onyx after copying deployment/azure-vm).
 # Requires: ACR_REGISTRY set in .env (e.g. myregistry.azurecr.io). Azure CLI and login to Azure.
 
@@ -34,14 +35,20 @@ echo "Registry: $ACR_REGISTRY"
 echo "Compose file: docker-compose.prod.yml"
 
 echo "Logging into ACR..."
+az login --identity
 az acr login --name "$ACR_NAME"
 
 echo "Pulling images..."
-# --ignore-pull-failures: optional images (e.g. code-interpreter) may not exist in ACR
-docker compose -f docker-compose.prod.yml pull --ignore-pull-failures
+# --ignore-buildable: will only pull services that have an image in the registry
+docker compose -f docker-compose.prod.yml pull --ignore-buildable
+
 
 echo "Restarting services..."
-docker compose -f docker-compose.prod.yml up -d --remove-orphans
+# -d               : run containers in the background
+# --remove-orphans : remove containers not defined in the current compose file
+# --no-build       : never build images locally (pull / use registry images only)
+# --force-recreate : always recreate containers, even if configuration did not change
+docker compose -f docker-compose.prod.yml up -d --remove-orphans --no-build --force-recreate
 
 echo "Cleaning up old images..."
 docker image prune -f
