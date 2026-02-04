@@ -1,7 +1,9 @@
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from typing import IO
 
+from eleven.onyx.configs.app_configs import IMAGE_VISION_MAX_CONCURRENT_REQUESTS
 from eleven.onyx.file_processing.image_utils import convert_pdf_pages_to_images
 from eleven.onyx.file_processing.image_utils import convert_pptx_slides_to_images
 from eleven.onyx.prompts.image_analysis import IMAGE_DESCRIPTION_SYSTEM_PROMPT
@@ -92,17 +94,30 @@ def _parse_text_with_vision(
                 file, file_name, pdf_pass, content_type, image_callback
             )
 
-        text_parts = []
-        for idx, image_data in enumerate(images):
-            summary = summarize_image_with_error_handling(
+        text_parts: list[str] = []
+
+        max_workers = min(len(images), IMAGE_VISION_MAX_CONCURRENT_REQUESTS)
+        logger.debug(
+            "Starting vision parsing with %d images using up to %d workers",
+            len(images),
+            max_workers,
+        )
+
+        def _process_image(args: tuple[int, bytes]) -> str | None:
+            idx, image_data = args
+            return summarize_image_with_error_handling(
                 llm=llm,
                 image_data=image_data,
                 system_prompt=IMAGE_DESCRIPTION_SYSTEM_PROMPT,
                 context_name=f"{file_name} - page {idx + 1}",
             )
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(_process_image, enumerate(images)))
+
+        for idx, summary in enumerate(results):
             if summary:
-                slide_number = idx + 1
-                slide_marker = f"<!-- Slide number: {slide_number} -->"
+                slide_marker = f"<!-- Slide number: {idx + 1} -->"
                 text_parts.append(f"{slide_marker}\n\n{summary}")
 
         return ExtractionResult(

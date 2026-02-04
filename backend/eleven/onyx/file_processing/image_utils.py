@@ -12,6 +12,7 @@ try:
 except ImportError:
     fitz = None  # type: ignore
 
+from eleven.onyx.configs.app_configs import PDF_IMAGE_DPI
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -90,13 +91,14 @@ def convert_pdf_pages_to_images(
                 pdf_document.close()
                 return []
 
-        images = []
+        images: list[bytes] = []
         try:
             for page_num in range(len(pdf_document)):
                 page = pdf_document.load_page(page_num)
-                pix = page.get_pixmap(dpi=200)
+                pix = page.get_pixmap(dpi=PDF_IMAGE_DPI)
                 img_bytes = pix.tobytes("jpeg")
                 images.append(img_bytes)
+                pix = None  # Free pixmap memory
         except Exception as e:
             logger.error(f"Error converting PDF pages to images: {e}")
         finally:
