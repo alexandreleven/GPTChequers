@@ -78,13 +78,15 @@ RUN uv pip install --system --no-cache-dir --upgrade \
         pkg-config \
         gcc && \
     # Install here to avoid some packages being cleaned up above
-    apt-get install -y \
-        libreoffice \
-        libreoffice-writer \
+    apt-get install -y --no-install-recommends \
         libreoffice-impress \
         libxmlsec1-openssl \
         # Install postgresql-client for easy manual tests
         postgresql-client && \
+    # Clean up unnecessary LibreOffice files to reduce image size
+    rm -rf /usr/share/libreoffice/share/gallery \
+           /usr/share/libreoffice/share/template \
+           /usr/share/libreoffice/share/config/images_*.zip && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && \
     rm -rf ~/.cache/uv /tmp/*.txt && \
