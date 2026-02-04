@@ -21,6 +21,9 @@ docker_compose_cmd() {
 # Assign appropriate Docker Compose command
 COMPOSE_CMD=$(docker_compose_cmd)
 
+# Get ACR name from .env
+ACR_NAME="${ACR_REGISTRY%%.*}"
+
 # Request certificate for DOMAIN only (no www subdomain).
 # Set INCLUDE_WWW=true in .env.nginx to also request www.$DOMAIN.
 if [[ "${INCLUDE_WWW:-false}" == "true" ]] && [[ ! $DOMAIN == www.* ]]; then
@@ -54,7 +57,7 @@ echo "### Creating dummy certificate for $domains ..."
 path="/etc/letsencrypt/live/$domains"
 mkdir -p "$data_path/conf/live/$domains"
 az login --identity
-az acr login --name onyxelevenGPTv2
+az acr login --name "$ACR_NAME"
 $COMPOSE_CMD -f docker-compose.prod.yml run  --name onyx --rm --entrypoint "\
   openssl req -x509 -nodes -newkey rsa:$rsa_key_size -days 1\
     -keyout '$path/privkey.pem' \

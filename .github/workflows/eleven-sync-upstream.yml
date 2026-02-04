@@ -11,10 +11,12 @@ permissions:
 jobs:
   sync-upstream-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       # Step 1: Checkout the fork repository
       - name: Checkout fork
+        timeout-minutes: 5
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Fetch all history to allow tags and branch creation
@@ -23,6 +25,7 @@ jobs:
       # Step 2: Detect new upstream tag greater than local max tag
       - name: Detect new upstream tag
         id: detect
+        timeout-minutes: 5
         run: |
           UPSTREAM_REPO="https://github.com/onyx-dot-app/onyx.git"
 
@@ -61,6 +64,7 @@ jobs:
       # Step 3: Fetch the specific upstream tag
       - name: Fetch upstream tag
         if: steps.detect.outputs.tag != ''
+        timeout-minutes: 5
         run: |
           git remote add upstream https://github.com/onyx-dot-app/onyx.git
           git fetch upstream refs/tags/${{ steps.detect.outputs.tag }}:refs/tags/${{ steps.detect.outputs.tag }}
@@ -68,22 +72,26 @@ jobs:
       # Step 4: Checkout upstream tag
       - name: Checkout upstream tag
         if: steps.detect.outputs.tag != ''
+        timeout-minutes: 5
         run: |
           git checkout refs/tags/${{ steps.detect.outputs.tag }}
 
       - name: Create branch from tag
         if: steps.detect.outputs.tag != ''
+        timeout-minutes: 5
         run: |
           git checkout -B upstream/${{ steps.detect.outputs.tag }}
 
       - name: Push upstream release branch
         if: steps.detect.outputs.tag != ''
+        timeout-minutes: 5
         run: |
           git push -u origin upstream/${{ steps.detect.outputs.tag }}
 
       # Step 5: Open a Pull Request from the new branch to main
       - name: Open Pull Request
         if: steps.detect.outputs.tag != ''
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ secrets.PR_OPENER }}
         run: |
@@ -118,6 +126,7 @@ jobs:
       # Step 6: Create tag in fork
       - name: Create tag in fork
         if: steps.detect.outputs.tag != ''
+        timeout-minutes: 5
         run: |
           TAG=${{ steps.detect.outputs.tag }}
       
