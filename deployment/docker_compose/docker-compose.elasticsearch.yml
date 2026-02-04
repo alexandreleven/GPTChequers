@@ -1,6 +1,6 @@
 # Elasticsearch service for Eleven Edition
 # This file extends docker-compose.yml with Elasticsearch configuration
-# Usage: docker compose -f docker-compose.yml -f docker-compose.elasticsearch.yml up -d
+# Usage: docker compose -f docker-compose.prod.eleven.yml -f docker-compose.elasticsearch.yml up -d
 
 services:
   elasticsearch:
