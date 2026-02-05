@@ -14,8 +14,8 @@ set -euo pipefail
 # Typical usage:
 #   source /path/to/load-env-vars.sh /path/to/.env-vars-backend.conf (or web)
 #
-# The .conf file lists Key Vault secret names (one per line); comments (#) and empty lines are ignored.
-# Only those secrets are fetched and exported as environment variables.
+# The .conf file lists environment variable names (e.g. OPENID_CONFIG_URL, one per line); comments (#) and empty lines are ignored.
+# These names are converted to Key Vault secret names (e.g. openid-config-url) and fetched, then exported with the original env var name.
 #
 # Docker / docker-compose integration:
 #   source /app/load-env-vars.sh /app/.env-vars-backend.conf
@@ -27,14 +27,22 @@ if ! command -v az >/dev/null 2>&1; then
   exit 1
 fi
 
-# Key Vault: hyphenated names (e.g. oauth-client-id) vs. env var (e.g. OAUTH_CLIENT_ID)
-normalize_secret_name_to_env() {
-  local name="$1"
-  echo "${name^^}" | tr '-' '_'
+# Authenticate with Azure (managed identity on VM, or use mounted credentials in local dev)
+az login --identity
+az acr login --name "$ACR_NAME"
+
+# Convert env var name (e.g. OAUTH_CLIENT_ID) to Key Vault secret name (e.g. oauth-client-id)
+env_name_to_keyvault_secret() {
+  local env_name="$1"
+  echo "${env_name,,}" | tr '_' '-'
 }
 
 load_one_secret() {
-  local secret_name="$1"
+  local env_var_name="$1"
+
+  # Convert env var name (e.g. OPENID_CONFIG_URL) to Key Vault secret name (e.g. openid-config-url)
+  local secret_name
+  secret_name="$(env_name_to_keyvault_secret "$env_var_name")"
 
   # Fetch secret value from Azure Key Vault (never written to disk)
   local value
@@ -42,23 +50,19 @@ load_one_secret() {
       --vault-name "$AZURE_KEY_VAULT_NAME" \
       --name "$secret_name" \
       --query value -o tsv 2>/dev/null)"; then
-    echo "Warning: could not retrieve secret '$secret_name' from Key Vault '$AZURE_KEY_VAULT_NAME'." >&2
+    echo "Warning: could not retrieve secret '$secret_name' (for env var '$env_var_name') from Key Vault '$AZURE_KEY_VAULT_NAME'." >&2
     return 1
   fi
 
   if [[ -z "${value}" ]]; then
-    echo "Warning: secret '$secret_name' is empty, no environment variable set." >&2
+    echo "Warning: secret '$secret_name' (for env var '$env_var_name') is empty, no environment variable set." >&2
     return 0
   fi
 
-  # Convert Key Vault name (e.g. oauth-client-id) to env var name (e.g. OAUTH_CLIENT_ID)
-  local env_name
-  env_name="$(normalize_secret_name_to_env "$secret_name")"
-
   # Export in memory only for the current shell. Never log the value.
-  export "$env_name"="$value"
+  export "$env_var_name"="$value"
 
-  echo "Secret '$secret_name' loaded as environment variable '$env_name'." >&2
+  echo "Secret '$secret_name' loaded as environment variable '$env_var_name'." >&2
 }
 
 # Get .conf file path from first argument
@@ -70,12 +74,12 @@ if [[ ! -f "$conf_file" ]]; then
 fi
 
 # Read .conf file line by line and load each secret
-while IFS= read -r secret_name; do
+while IFS= read -r env_var_name; do
   # Strip comments (everything after #) and trim whitespace
-  secret_name="${secret_name%%#*}"
-  secret_name="${secret_name// /}"
+  env_var_name="${env_var_name%%#*}"
+  env_var_name="${env_var_name// /}"
   # Skip empty lines
-  [[ -z "$secret_name" ]] && continue
-  # Load this secret from Key Vault
-  load_one_secret "$secret_name"
+  [[ -z "$env_var_name" ]] && continue
+  # Load this secret from Key Vault (converting env var name to Key Vault secret name)
+  load_one_secret "$env_var_name"
 done < "$conf_file"

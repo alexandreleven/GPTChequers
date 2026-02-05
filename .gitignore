@@ -25,9 +25,6 @@ backend/onyx/evals/one_off/*.json
 
 # secret files
 .env
-# Added both azure-vm/.env and azure-vm/.env.nginx.eleven just in case
-!deployment/azure-vm/.env 
-!deployment/azure-vm/.env.nginx
 jira_test_env
 settings.json
 

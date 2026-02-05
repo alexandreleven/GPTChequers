@@ -47,8 +47,8 @@ services:
     volumes:
       - api_server_logs:/var/log/onyx
       # Mount script and config from host (no need to rebuild image when these change)
-      - ../backend/load-env-vars.sh:/app/load-env-vars.sh:ro
-      - ../backend/.env-vars-backend.conf:/app/.env-vars-backend.conf:ro
+      - ./load-env-vars.sh:/app/load-env-vars.sh:ro
+      - ./.env-vars-backend.conf:/app/.env-vars-backend.conf:ro
 
   background:
     image: ${ACR_REGISTRY}/onyx-backend:${IMAGE_TAG}
@@ -94,8 +94,8 @@ services:
     volumes:
       - background_logs:/var/log/onyx
       # Mount script and config from host (no need to rebuild image when these change)
-      - ../backend/load-env-vars.sh:/app/load-env-vars.sh:ro
-      - ../backend/.env-vars-backend.conf:/app/.env-vars-backend.conf:ro
+      - ./load-env-vars.sh:/app/load-env-vars.sh:ro
+      - ./.env-vars-backend.conf:/app/.env-vars-backend.conf:ro
     logging:
       driver: json-file
       options:
