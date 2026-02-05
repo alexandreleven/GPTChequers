@@ -181,6 +181,8 @@ ee = [
 eleven = [
     "pymupdf==1.26.7",
     "elasticsearch==8.17.2",
+    "azure-identity==1.25.1",
+    "azure-keyvault-secrets==4.10.0",
 ]
 
 # Model server specific dependencies (ML packages)
