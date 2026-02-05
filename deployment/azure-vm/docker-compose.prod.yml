@@ -8,7 +8,7 @@ services:
       dockerfile: Dockerfile
     command: >
       /bin/sh -c "
-      . /app/load-env-vars.sh /app/.env-vars-backend.conf &&
+      eval \$$(python /app/load-env-vars.py backend) &&
       alembic upgrade head &&
       echo \"Starting Onyx Api Server\" &&
       uvicorn onyx.main:app --host 0.0.0.0 --port 8080"
@@ -46,9 +46,8 @@ services:
         max-file: "6"
     volumes:
       - api_server_logs:/var/log/onyx
-      # Mount script and config from host (no need to rebuild image when these change)
-      - ./load-env-vars.sh:/app/load-env-vars.sh:ro
-      - ./.env-vars-backend.conf:/app/.env-vars-backend.conf:ro
+      # Mount Python script from host (no need to rebuild image when it changes)
+      - ./load-env-vars.py:/app/load-env-vars.py:ro
 
   background:
     image: ${ACR_REGISTRY}/onyx-backend:${IMAGE_TAG}
@@ -57,7 +56,7 @@ services:
       dockerfile: Dockerfile
     command: >
       /bin/sh -c "
-      . /app/load-env-vars.sh /app/.env-vars-backend.conf &&
+      eval \$$(python /app/load-env-vars.py backend) &&
       if [ -f /etc/ssl/certs/custom-ca.crt ]; then
         update-ca-certificates;
       fi &&
@@ -93,9 +92,8 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - background_logs:/var/log/onyx
-      # Mount script and config from host (no need to rebuild image when these change)
-      - ./load-env-vars.sh:/app/load-env-vars.sh:ro
-      - ./.env-vars-backend.conf:/app/.env-vars-backend.conf:ro
+      # Mount Python script from host (no need to rebuild image when it changes)
+      - ./load-env-vars.py:/app/load-env-vars.py:ro
     logging:
       driver: json-file
       options:
@@ -121,10 +119,7 @@ services:
         - NEXT_PUBLIC_DISABLE_LOGOUT=${NEXT_PUBLIC_DISABLE_LOGOUT:-}
         - NEXT_PUBLIC_THEME=${NEXT_PUBLIC_THEME:-}
         - NEXT_PUBLIC_FORGOT_PASSWORD_ENABLED=${NEXT_PUBLIC_FORGOT_PASSWORD_ENABLED:-}
-    command: >
-      /bin/sh -c "
-      . /app/load-env-vars.sh /app/.env-vars-web.conf &&
-      exec node server.js"
+    command: node server.js
     depends_on:
       - api_server
     restart: unless-stopped
@@ -133,10 +128,6 @@ services:
     env_file:
       - path: .env
         required: false
-    volumes:
-      # Mount script and config from host (no need to rebuild image when these change)
-      - ./load-env-vars.sh:/app/load-env-vars.sh:ro
-      - ./.env-vars-web.conf:/app/.env-vars-web.conf:ro
     logging:
       driver: json-file
       options:
