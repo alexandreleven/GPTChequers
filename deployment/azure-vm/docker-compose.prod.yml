@@ -121,6 +121,10 @@ services:
         - NEXT_PUBLIC_DISABLE_LOGOUT=${NEXT_PUBLIC_DISABLE_LOGOUT:-}
         - NEXT_PUBLIC_THEME=${NEXT_PUBLIC_THEME:-}
         - NEXT_PUBLIC_FORGOT_PASSWORD_ENABLED=${NEXT_PUBLIC_FORGOT_PASSWORD_ENABLED:-}
+    command: >
+      /bin/sh -c "
+      . /app/load-env-vars.sh /app/.env-vars-web.conf &&
+      exec node server.js"
     depends_on:
       - api_server
     restart: unless-stopped
@@ -129,6 +133,10 @@ services:
     env_file:
       - path: .env
         required: false
+    volumes:
+      # Mount script and config from host (no need to rebuild image when these change)
+      - ./load-env-vars.sh:/app/load-env-vars.sh:ro
+      - ./.env-vars-web.conf:/app/.env-vars-web.conf:ro
     logging:
       driver: json-file
       options:

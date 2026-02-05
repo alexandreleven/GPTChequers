@@ -46,7 +46,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get clean
 
-
+# Install Azure CLI for Key Vault secret loading
+RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
 
 # Install Python dependencies
 # Remove py which is pulled in by retry, py is not needed and is a CVE
