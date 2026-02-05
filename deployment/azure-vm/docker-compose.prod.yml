@@ -8,6 +8,7 @@ services:
       dockerfile: Dockerfile
     command: >
       /bin/sh -c "
+      . /app/load-env-vars.sh /app/.env-vars-backend.conf &&
       alembic upgrade head &&
       echo \"Starting Onyx Api Server\" &&
       uvicorn onyx.main:app --host 0.0.0.0 --port 8080"
@@ -45,6 +46,9 @@ services:
         max-file: "6"
     volumes:
       - api_server_logs:/var/log/onyx
+      # Mount script and config from host (no need to rebuild image when these change)
+      - ../backend/load-env-vars.sh:/app/load-env-vars.sh:ro
+      - ../backend/.env-vars-backend.conf:/app/.env-vars-backend.conf:ro
 
   background:
     image: ${ACR_REGISTRY}/onyx-backend:${IMAGE_TAG}
@@ -53,6 +57,7 @@ services:
       dockerfile: Dockerfile
     command: >
       /bin/sh -c "
+      . /app/load-env-vars.sh /app/.env-vars-backend.conf &&
       if [ -f /etc/ssl/certs/custom-ca.crt ]; then
         update-ca-certificates;
       fi &&
@@ -88,6 +93,9 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - background_logs:/var/log/onyx
+      # Mount script and config from host (no need to rebuild image when these change)
+      - ../backend/load-env-vars.sh:/app/load-env-vars.sh:ro
+      - ../backend/.env-vars-backend.conf:/app/.env-vars-backend.conf:ro
     logging:
       driver: json-file
       options:
