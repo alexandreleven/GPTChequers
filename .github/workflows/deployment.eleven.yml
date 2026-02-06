@@ -146,10 +146,10 @@ jobs:
           build-args: |
             ONYX_VERSION=${{ github.ref_name }}
           # maximecremieux tbc : test to see if this will make the push faster
-          # cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
-          # cache-to: type=inline
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
+          cache-to: type=inline
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
 
   # Build and push web image
   build-web:
@@ -199,10 +199,10 @@ jobs:
             NODE_OPTIONS=--max-old-space-size=8192
             NEXT_PUBLIC_ENABLE_ELEVEN_EDITION=true
           # maximecremieux tbc : test to see if this will make the push faster
-          # cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
-          # cache-to: type=inline
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
+          cache-to: type=inline
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
 # maximecremieux tbc l.199
   # Build and push model-server image
   build-model-server:
@@ -250,10 +250,10 @@ jobs:
           build-args: |
             ONYX_VERSION=${{ github.ref_name }}
           # maximecremieux tbc : test to see if this will make the push faster
-          # cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
-          # cache-to: type=inline
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
+          cache-to: type=inline
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
           provenance: false
           sbom: false
 
