@@ -79,7 +79,7 @@ def wait_for_elasticsearch_with_timeout(
                     f"Elasticsearch: Cluster status is {status}, waiting for improvement..."
                 )
         except Exception as e:
-            logger.debug(f"Elasticsearch: Health check failed with error: {str(e)}")
+            logger.error(f"Elasticsearch: Health check failed with error: {str(e)}")
 
         time_elapsed = time.monotonic() - time_start
         if time_elapsed > wait_limit:
