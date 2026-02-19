@@ -1,0 +1,303 @@
+name: Build and Push Docker Images on Tag
+
+on:
+  push:
+    tags:
+      - "*"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment for deployment"
+        required: false
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+# Restrictive default permissions (contents: read required for actions/checkout and write to improve push speed)
+permissions:
+  contents: read
+  actions: write
+
+env:
+  # Azure Container Registry
+  ACR_REGISTRY: ${{ vars.AZURE_REGISTRY_NAME }}.azurecr.io
+  # Image names
+  BACKEND_IMAGE: onyx-backend
+  WEB_IMAGE: onyx-web-server
+  MODEL_SERVER_IMAGE: onyx-model-server
+
+jobs:
+  # Determine build configuration based on tag
+  determine-builds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      is-stable: ${{ steps.check.outputs.is-stable }}
+      is-beta: ${{ steps.check.outputs.is-beta }}
+      is-nightly: ${{ steps.check.outputs.is-nightly }}
+      is-test-run: ${{ steps.check.outputs.is-test-run }}
+      sanitized-tag: ${{ steps.check.outputs.sanitized-tag }}
+      short-sha: ${{ steps.check.outputs.short-sha }}
+      docker-tags: ${{ steps.check.outputs.docker-tags }}
+    steps:
+      - name: Determine build configuration
+        id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          SANITIZED_TAG=$(echo "$TAG" | tr '/' '-')
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          IS_STABLE=false
+          IS_BETA=false
+          IS_NIGHTLY=false
+          IS_TEST_RUN=false
+
+          # Determine tag type
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            IS_STABLE=true
+          fi
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            IS_BETA=true
+          fi
+          if [[ "$TAG" == nightly* ]]; then
+            IS_NIGHTLY=true
+          fi
+
+          # Test run detection (workflow_dispatch on non-prod tag)
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ "$IS_STABLE" != "true" ]] && [[ "$IS_BETA" != "true" ]] && [[ "$IS_NIGHTLY" != "true" ]]; then
+              IS_TEST_RUN=true
+            fi
+          fi
+
+          # Build Docker tags list
+          DOCKER_TAGS="$SANITIZED_TAG"
+          if [[ "$IS_STABLE" == "true" ]]; then
+            DOCKER_TAGS="$DOCKER_TAGS,latest"
+          fi
+          if [[ "$IS_BETA" == "true" ]]; then
+            DOCKER_TAGS="$DOCKER_TAGS,beta"
+          fi
+          if [[ "$IS_NIGHTLY" == "true" ]]; then
+            DOCKER_TAGS="$DOCKER_TAGS,edge"
+          fi
+
+          {
+            echo "is-stable=$IS_STABLE"
+            echo "is-beta=$IS_BETA"
+            echo "is-nightly=$IS_NIGHTLY"
+            echo "is-test-run=$IS_TEST_RUN"
+            echo "sanitized-tag=$SANITIZED_TAG"
+            echo "short-sha=$SHORT_SHA"
+            echo "docker-tags=$DOCKER_TAGS"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Tag: $TAG"
+          echo "Docker tags: $DOCKER_TAGS"
+
+  # Build and push backend image
+  build-backend:
+    needs: determine-builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.AZURE_CLIENT_ID }}
+          password: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ACR_REGISTRY }}/${{ env.BACKEND_IMAGE }}
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=${{ needs.determine-builds.outputs.sanitized-tag }}
+            type=raw,value=latest,enable=${{ needs.determine-builds.outputs.is-stable == 'true' }}
+            type=raw,value=beta,enable=${{ needs.determine-builds.outputs.is-beta == 'true' }}
+            type=raw,value=edge,enable=${{ needs.determine-builds.outputs.is-nightly == 'true' }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          platforms: linux/amd64
+          push: ${{ needs.determine-builds.outputs.is-test-run != 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            ONYX_VERSION=${{ github.ref_name }}
+          # maximecremieux tbc : test to see if this will make the push faster
+          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
+          cache-to: type=inline
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
+
+  # Build and push web image
+  build-web:
+    needs: determine-builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.AZURE_CLIENT_ID }}
+          password: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ACR_REGISTRY }}/${{ env.WEB_IMAGE }}
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=${{ needs.determine-builds.outputs.sanitized-tag }}
+            type=raw,value=latest,enable=${{ needs.determine-builds.outputs.is-stable == 'true' }}
+            type=raw,value=beta,enable=${{ needs.determine-builds.outputs.is-beta == 'true' }}
+            type=raw,value=edge,enable=${{ needs.determine-builds.outputs.is-nightly == 'true' }}
+
+      - name: Build and push web
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          file: ./web/Dockerfile
+          platforms: linux/amd64
+          push: ${{ needs.determine-builds.outputs.is-test-run != 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            ONYX_VERSION=${{ github.ref_name }}
+            NODE_OPTIONS=--max-old-space-size=8192
+            NEXT_PUBLIC_ENABLE_ELEVEN_EDITION=true
+          # maximecremieux tbc : test to see if this will make the push faster
+          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
+          cache-to: type=inline
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
+# maximecremieux tbc l.199
+  # Build and push model-server image
+  build-model-server:
+    needs: determine-builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.AZURE_CLIENT_ID }}
+          password: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ACR_REGISTRY }}/${{ env.MODEL_SERVER_IMAGE }}
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=${{ needs.determine-builds.outputs.sanitized-tag }}
+            type=raw,value=latest,enable=${{ needs.determine-builds.outputs.is-stable == 'true' }}
+            type=raw,value=beta,enable=${{ needs.determine-builds.outputs.is-beta == 'true' }}
+            type=raw,value=edge,enable=${{ needs.determine-builds.outputs.is-nightly == 'true' }}
+
+      - name: Build and push model-server
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.model_server
+          platforms: linux/amd64
+          push: ${{ needs.determine-builds.outputs.is-test-run != 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            ONYX_VERSION=${{ github.ref_name }}
+          # maximecremieux tbc : test to see if this will make the push faster
+          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
+          cache-to: type=inline
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
+
+  # Summary job for deployment trigger
+  build-complete:
+    needs:
+      - determine-builds
+      - build-backend
+      - build-web
+      - build-model-server
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    outputs:
+      success: ${{ steps.check.outputs.success }}
+      image-tag: ${{ needs.determine-builds.outputs.sanitized-tag }}
+    steps:
+      - name: Check build results
+        id: check
+        run: |
+          if [[ "${{ needs.build-backend.result }}" == "success" ]] && \
+             [[ "${{ needs.build-web.result }}" == "success" ]] && \
+             [[ "${{ needs.build-model-server.result }}" == "success" ]]; then
+            echo "success=true" >> "$GITHUB_OUTPUT"
+            echo "All builds completed successfully!"
+          else
+            echo "success=false" >> "$GITHUB_OUTPUT"
+            echo "Some builds failed:"
+            echo "  backend: ${{ needs.build-backend.result }}"
+            echo "  web: ${{ needs.build-web.result }}"
+            echo "  model-server: ${{ needs.build-model-server.result }}"
+            exit 1
+          fi
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Tag | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ${{ env.ACR_REGISTRY }}/${{ env.BACKEND_IMAGE }} | ${{ needs.determine-builds.outputs.sanitized-tag }} | ${{ needs.build-backend.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${{ env.ACR_REGISTRY }}/${{ env.WEB_IMAGE }} | ${{ needs.determine-builds.outputs.sanitized-tag }} | ${{ needs.build-web.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ${{ env.ACR_REGISTRY }}/${{ env.MODEL_SERVER_IMAGE }} | ${{ needs.determine-builds.outputs.sanitized-tag }} | ${{ needs.build-model-server.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Docker Tags Applied" >> $GITHUB_STEP_SUMMARY
+          echo "\`${{ needs.determine-builds.outputs.docker-tags }}\`" >> $GITHUB_STEP_SUMMARY

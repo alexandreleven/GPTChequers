@@ -3,6 +3,12 @@ import { ConfigurableSources, ValidInputTypes, ValidSources } from "../types";
 import { AccessTypeGroupSelectorFormType } from "@/components/admin/connectors/AccessTypeGroupSelector";
 import { Credential } from "@/lib/connectors/credentials"; // Import Credential type
 import { DOCS_ADMINS_PATH } from "@/lib/constants";
+// === ELEVEN CONNECTORS START ===
+import {
+  ELEVEN_CONNECTOR_CONFIGS,
+  ELEVEN_CONNECTOR_SOURCES,
+} from "@/app/eleven/connectors";
+// === ELEVEN CONNECTORS END ===
 
 export function isLoadState(connector_name: string): boolean {
   // TODO: centralize connector metadata like this somewhere instead of hardcoding it here
@@ -142,8 +148,17 @@ export interface ConnectionConfiguration {
   ) => boolean;
 }
 
-export const connectorConfigs: Record<
+// === ELEVEN CONNECTORS START ===
+// Type for base connectors (excluding Eleven Edition connectors)
+type BaseConfigurableSources = Exclude<
   ConfigurableSources,
+  (typeof ELEVEN_CONNECTOR_SOURCES)[number]
+>;
+// === ELEVEN CONNECTORS END ===
+
+// Base connector configurations (excluding Eleven connectors)
+const baseConnectorConfigs: Record<
+  BaseConfigurableSources,
   ConnectionConfiguration
 > = {
   web: {
@@ -1674,6 +1689,18 @@ For example, specifying .*-support.* as a "channel" will cause the connector to 
     advanced_values: [],
   },
 };
+
+// Merge base configs with Eleven connectors
+export const connectorConfigs: Record<
+  ConfigurableSources,
+  ConnectionConfiguration
+> = {
+  ...baseConnectorConfigs,
+  // === ELEVEN CONNECTORS START ===
+  ...ELEVEN_CONNECTOR_CONFIGS,
+  // === ELEVEN CONNECTORS END ===
+} as Record<ConfigurableSources, ConnectionConfiguration>;
+
 type ConnectorField = ConnectionConfiguration["values"][number];
 
 const buildInitialValuesForFields = (

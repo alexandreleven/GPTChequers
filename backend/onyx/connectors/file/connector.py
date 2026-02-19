@@ -16,7 +16,6 @@ from onyx.connectors.interfaces import LoadConnector
 from onyx.connectors.models import Document
 from onyx.connectors.models import ImageSection
 from onyx.connectors.models import TextSection
-from onyx.file_processing.extract_file_text import extract_text_and_images
 from onyx.file_processing.extract_file_text import get_file_ext
 from onyx.file_processing.file_types import OnyxFileExtensions
 from onyx.file_processing.image_utils import store_image_and_create_section
@@ -145,6 +144,12 @@ def _process_file(
 
     # 2) Otherwise: text-based approach. Possibly with embedded images.
     file.seek(0)
+    from onyx.utils.variable_functionality import fetch_versioned_implementation
+
+    # Get extract_text_and_images via fetch_versioned_implementation
+    extract_text_and_images = fetch_versioned_implementation(
+        "onyx.file_processing.extract_file_text", "extract_text_and_images"
+    )
 
     # Extract text and images from the file
     extraction_result = extract_text_and_images(

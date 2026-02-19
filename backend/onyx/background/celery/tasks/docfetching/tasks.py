@@ -105,6 +105,7 @@ def docfetching_task(
     cc_pair_id: int,
     search_settings_id: int,
     is_ee: bool,
+    is_eleven: bool,
     tenant_id: str,
 ) -> None:
     """
@@ -120,7 +121,13 @@ def docfetching_task(
     heartbeat_thread, stop_event = start_heartbeat(index_attempt_id)
     try:
         _docfetching_task(
-            app, index_attempt_id, cc_pair_id, search_settings_id, is_ee, tenant_id
+            app,
+            index_attempt_id,
+            cc_pair_id,
+            search_settings_id,
+            is_ee,
+            is_eleven,
+            tenant_id,
         )
     finally:
         stop_heartbeat(heartbeat_thread, stop_event)  # Stop heartbeat before exiting
@@ -132,6 +139,7 @@ def _docfetching_task(
     cc_pair_id: int,
     search_settings_id: int,
     is_ee: bool,
+    is_eleven: bool,
     tenant_id: str,
 ) -> None:
     # Since connector_indexing_proxy_task spawns a new process using this function as
@@ -217,6 +225,7 @@ def _docfetching_task(
             tenant_id,
             cc_pair_id,
             is_ee,
+            is_eleven,
             callback=callback,
         )
 
@@ -415,6 +424,7 @@ def docfetching_proxy_task(
         cc_pair_id,
         search_settings_id,
         global_version.is_ee_version(),
+        global_version.is_eleven_version(),
         tenant_id,
     )
 

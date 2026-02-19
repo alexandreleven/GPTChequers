@@ -93,6 +93,7 @@ from onyx.server.manage.models import SlackBotTokens
 from onyx.utils.logger import setup_logger
 from onyx.utils.variable_functionality import fetch_ee_implementation_or_noop
 from onyx.utils.variable_functionality import set_is_ee_based_on_env_variable
+from onyx.utils.variable_functionality import set_is_eleven_based_on_env_variable
 from shared_configs.configs import DISALLOWED_SLACK_BOT_TENANT_LIST
 from shared_configs.configs import MODEL_SERVER_HOST
 from shared_configs.configs import MODEL_SERVER_PORT
@@ -1125,6 +1126,7 @@ if __name__ == "__main__":
     tenant_handler = SlackbotHandler()
 
     set_is_ee_based_on_env_variable()
+    set_is_eleven_based_on_env_variable()
 
     try:
         # Keep the main thread alive

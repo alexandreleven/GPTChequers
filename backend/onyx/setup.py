@@ -11,7 +11,11 @@ from onyx.configs.constants import KV_SEARCH_SETTINGS
 from onyx.configs.embedding_configs import SUPPORTED_EMBEDDING_MODELS
 from onyx.configs.embedding_configs import SupportedEmbeddingModel
 from onyx.configs.model_configs import GEN_AI_API_KEY
+from onyx.configs.model_configs import GEN_AI_API_KEY_AZURE
+from onyx.configs.model_configs import GEN_AI_DEFAULT_MODEL_AZURE
+from onyx.configs.model_configs import GEN_AI_DISPLAY_NAME_AZURE
 from onyx.configs.model_configs import GEN_AI_MODEL_VERSION
+from onyx.configs.model_configs import GEN_AI_TARGET_URI_AZURE
 from onyx.context.search.models import SavedSearchSettings
 from onyx.db.connector import check_connectors_exist
 from onyx.db.connector import create_initial_default_connector
@@ -288,6 +292,65 @@ def setup_postgres(db_session: Session) -> None:
     create_initial_public_credential(db_session)
     create_initial_default_connector(db_session)
     associate_default_cc_pair(db_session)
+
+    # Load input prompts and user folders from YAML
+    logger.notice("Loading input prompts and user folders")
+    load_input_prompts_from_yaml(db_session, INPUT_PROMPT_YAML)
+
+    # Check if Azure OpenAI is configured first (takes precedence)
+    if (
+        GEN_AI_API_KEY_AZURE
+        and GEN_AI_TARGET_URI_AZURE
+        and fetch_default_provider(db_session) is None
+    ):
+        # Only for dev flows
+        logger.notice("Setting up default Azure OpenAI LLM for dev.")
+
+        # Parse target URI to extract api_base, deployment_name, and api_version
+        # Format: https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version={version}
+        from urllib.parse import urlparse, parse_qs
+
+        parsed_url = urlparse(GEN_AI_TARGET_URI_AZURE)
+        api_base = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
+        # Extract deployment name from path
+        path_parts = parsed_url.path.split("/")
+        deployment_name = None
+        if "deployments" in path_parts:
+            deployment_idx = path_parts.index("deployments")
+            if deployment_idx + 1 < len(path_parts):
+                deployment_name = path_parts[deployment_idx + 1]
+
+        # Extract api_version from query params
+        query_params = parse_qs(parsed_url.query)
+        api_version = query_params.get("api-version", [None])[0]
+
+        llm_model = GEN_AI_DEFAULT_MODEL_AZURE or deployment_name or "gpt-4o"
+        provider_name = GEN_AI_DISPLAY_NAME_AZURE or "DevEnvPresetAzure"
+
+        model_req = LLMProviderUpsertRequest(
+            name=provider_name,
+            provider=LlmProviderNames.AZURE,
+            api_key=GEN_AI_API_KEY_AZURE,
+            api_base=api_base,
+            api_version=api_version,
+            custom_config=None,
+            default_model_name=llm_model,
+            deployment_name=deployment_name,
+            is_public=True,
+            groups=[],
+            model_configurations=[
+                ModelConfigurationUpsertRequest(
+                    name=llm_model, is_visible=True, max_input_tokens=None
+                )
+            ],
+            api_key_changed=True,
+        )
+        new_llm_provider = upsert_llm_provider(
+            llm_provider_upsert_request=model_req, db_session=db_session
+        )
+        update_default_provider(provider_id=new_llm_provider.id, db_session=db_session)
+        return
 
     if GEN_AI_API_KEY and fetch_default_provider(db_session) is None:
         # Only for dev flows

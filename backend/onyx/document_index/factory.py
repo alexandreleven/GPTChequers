@@ -8,10 +8,11 @@ from onyx.document_index.opensearch.opensearch_document_index import (
     OpenSearchOldDocumentIndex,
 )
 from onyx.document_index.vespa.index import VespaIndex
+from onyx.utils.variable_functionality import fetch_versioned_implementation
 from shared_configs.configs import MULTI_TENANT
 
 
-def get_default_document_index(
+def _get_default_document_index(
     search_settings: SearchSettings,
     secondary_search_settings: SearchSettings | None,
     httpx_client: httpx.Client | None = None,
@@ -51,6 +52,32 @@ def get_default_document_index(
             multitenant=MULTI_TENANT,
             httpx_client=httpx_client,
         )
+
+
+def get_default_document_index(
+    search_settings: SearchSettings,
+    secondary_search_settings: SearchSettings | None,
+    httpx_client: httpx.Client | None = None,
+) -> DocumentIndex:
+    get_default_document_index_fn = fetch_versioned_implementation(
+        "onyx.document_index.factory", "_get_default_document_index"
+    )
+    return get_default_document_index_fn(
+        search_settings,
+        secondary_search_settings,
+        httpx_client,
+    )
+
+
+def get_current_primary_default_document_index(db_session: Session) -> DocumentIndex:
+    """
+    TODO: Use redis to cache this or something
+    """
+    search_settings = get_current_search_settings(db_session)
+    return get_default_document_index(
+        search_settings,
+        None,
+    )
 
 
 def get_all_document_indices(

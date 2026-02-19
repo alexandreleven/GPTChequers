@@ -42,7 +42,6 @@ from onyx.document_index.interfaces import DocumentMetadata
 from onyx.document_index.interfaces import IndexBatchParams
 from onyx.file_processing.image_summarization import summarize_image_with_error_handling
 from onyx.file_store.file_store import get_default_file_store
-from onyx.indexing.chunker import Chunker
 from onyx.indexing.embedder import embed_chunks_with_failure_handling
 from onyx.indexing.embedder import IndexingEmbedder
 from onyx.indexing.models import DocAwareChunk
@@ -65,7 +64,11 @@ from onyx.prompts.contextual_retrieval import DOCUMENT_SUMMARY_PROMPT
 from onyx.utils.logger import setup_logger
 from onyx.utils.threadpool_concurrency import run_functions_tuples_in_parallel
 from onyx.utils.timing import log_function_time
+from onyx.utils.variable_functionality import fetch_versioned_implementation
 
+
+# Get Chunker class via fetch_versioned_implementation
+Chunker = fetch_versioned_implementation("onyx.indexing.chunker", "Chunker")
 
 logger = setup_logger()
 
