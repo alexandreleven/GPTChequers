@@ -293,10 +293,6 @@ def setup_postgres(db_session: Session) -> None:
     create_initial_default_connector(db_session)
     associate_default_cc_pair(db_session)
 
-    # Load input prompts and user folders from YAML
-    logger.notice("Loading input prompts and user folders")
-    load_input_prompts_from_yaml(db_session, INPUT_PROMPT_YAML)
-
     # Check if Azure OpenAI is configured first (takes precedence)
     if (
         GEN_AI_API_KEY_AZURE
