@@ -14,7 +14,6 @@
 @import "css/square-button.css";
 @import "css/switch.css";
 @import "css/z-index.css";
-@import "css/nrf.css";
 
 @tailwind base;
 @tailwind components;
@@ -110,6 +109,11 @@
   /* Remove top margin from first child to align with icon */
   .prose > :first-child {
     margin-top: 0;
+  }
+
+  /* Remove bottom margin from last child to avoid extra space */
+  .prose > :last-child {
+    margin-bottom: 0;
   }
 }
 

@@ -32,9 +32,6 @@ from onyx.configs.constants import MessageType
 from onyx.configs.constants import OnyxRedisLocks
 from onyx.configs.onyxbot_configs import NOTIFY_SLACKBOT_NO_ANSWER
 from onyx.connectors.slack.utils import expert_info_from_slack_id
-from onyx.context.search.retrieval.search_runner import (
-    download_nltk_data,
-)
 from onyx.db.engine.sql_engine import get_session_with_current_tenant
 from onyx.db.engine.sql_engine import get_session_with_tenant
 from onyx.db.engine.sql_engine import SqlEngine
@@ -1130,9 +1127,6 @@ if __name__ == "__main__":
 
     set_is_ee_based_on_env_variable()
     set_is_eleven_based_on_env_variable()
-
-    logger.info("Verifying query preprocessing (NLTK) data is downloaded")
-    download_nltk_data()
 
     try:
         # Keep the main thread alive

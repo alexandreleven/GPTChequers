@@ -119,7 +119,7 @@ export const ConnectorMultiSelect = ({
           leftSearchIcon
           placeholder={effectivePlaceholder}
           value={searchQuery}
-          disabled={isInputDisabled}
+          variant={isInputDisabled ? "disabled" : undefined}
           onChange={(e) => {
             if (!allConnectorsSelected) {
               setSearchQuery(e.target.value);

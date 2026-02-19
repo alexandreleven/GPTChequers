@@ -42,7 +42,6 @@ from onyx.configs.constants import DocumentSource
 from onyx.configs.constants import MessageType
 from onyx.configs.constants import MilestoneRecordType
 from onyx.context.search.models import BaseFilters
-from onyx.context.search.models import CitationDocInfo
 from onyx.context.search.models import SearchDoc
 from onyx.db.chat import create_new_chat_message
 from onyx.db.chat import get_chat_session_by_id
@@ -86,10 +85,6 @@ from onyx.utils.logger import setup_logger
 from onyx.utils.long_term_log import LongTermLogger
 from onyx.utils.telemetry import mt_cloud_telemetry
 from onyx.utils.timing import log_function_time
-from onyx.utils.variable_functionality import (
-    fetch_versioned_implementation_with_fallback,
-)
-from onyx.utils.variable_functionality import noop_fallback
 from shared_configs.contextvars import get_current_tenant_id
 
 logger = setup_logger()
@@ -362,21 +357,20 @@ def handle_stream_message_objects(
             event=MilestoneRecordType.MULTIPLE_ASSISTANTS,
         )
 
-        # Track user message in PostHog for analytics
-        fetch_versioned_implementation_with_fallback(
-            module="onyx.utils.telemetry",
-            attribute="event_telemetry",
-            fallback=noop_fallback,
-        )(
-            distinct_id=user.email if user else tenant_id,
-            event="user_message_sent",
+        mt_cloud_telemetry(
+            tenant_id=tenant_id,
+            distinct_id=(
+                user.email
+                if user and not getattr(user, "is_anonymous", False)
+                else tenant_id
+            ),
+            event=MilestoneRecordType.USER_MESSAGE_SENT,
             properties={
                 "origin": new_msg_req.origin.value,
                 "has_files": len(new_msg_req.file_descriptors) > 0,
                 "has_project": chat_session.project_id is not None,
                 "has_persona": persona is not None and persona.id != DEFAULT_PERSONA_ID,
                 "deep_research": new_msg_req.deep_research,
-                "tenant_id": tenant_id,
             },
         )
 
@@ -744,27 +738,16 @@ def llm_loop_completion_handle(
         else:
             final_answer = "The generation was stopped by the user."
 
-    # Build citation_docs_info from accumulated citations in state container
-    citation_docs_info: list[CitationDocInfo] = []
-    seen_citation_nums: set[int] = set()
-    for citation_num, search_doc in state_container.citation_to_doc.items():
-        if citation_num not in seen_citation_nums:
-            seen_citation_nums.add(citation_num)
-            citation_docs_info.append(
-                CitationDocInfo(
-                    search_doc=search_doc,
-                    citation_number=citation_num,
-                )
-            )
-
     save_chat_turn(
         message_text=final_answer,
         reasoning_tokens=state_container.reasoning_tokens,
-        citation_docs_info=citation_docs_info,
+        citation_to_doc=state_container.citation_to_doc,
         tool_calls=state_container.tool_calls,
+        all_search_docs=state_container.get_all_search_docs(),
         db_session=db_session,
         assistant_message=assistant_message,
         is_clarification=state_container.is_clarification,
+        emitted_citations=state_container.get_emitted_citations(),
     )
 
 

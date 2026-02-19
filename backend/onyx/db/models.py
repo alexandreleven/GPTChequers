@@ -188,6 +188,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         nullable=True,
         default=None,
     )
+    chat_background: Mapped[str | None] = mapped_column(String, nullable=True)
     # personalization fields are exposed via the chat user settings "Personalization" tab
     personal_name: Mapped[str | None] = mapped_column(String, nullable=True)
     personal_role: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -2932,8 +2933,6 @@ class PersonaLabel(Base):
         "Persona",
         secondary=Persona__PersonaLabel.__table__,
         back_populates="labels",
-        cascade="all, delete-orphan",
-        single_parent=True,
     )
 
 
@@ -3626,6 +3625,18 @@ class InputPrompt(Base):
         ForeignKey("user.id", ondelete="CASCADE"), nullable=True
     )
 
+    __table_args__ = (
+        # Unique constraint on (prompt, user_id) for user-owned prompts
+        UniqueConstraint("prompt", "user_id", name="uq_inputprompt_prompt_user_id"),
+        # Partial unique index for public prompts (user_id IS NULL)
+        Index(
+            "uq_inputprompt_prompt_public",
+            "prompt",
+            unique=True,
+            postgresql_where=text("user_id IS NULL"),
+        ),
+    )
+
 
 class InputPrompt__User(Base):
     __tablename__ = "inputprompt__user"
@@ -3634,7 +3645,7 @@ class InputPrompt__User(Base):
         ForeignKey("inputprompt.id"), primary_key=True
     )
     user_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("inputprompt.id"), primary_key=True
+        ForeignKey("user.id"), primary_key=True
     )
     disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 

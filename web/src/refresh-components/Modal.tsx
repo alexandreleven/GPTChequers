@@ -60,6 +60,8 @@ interface ModalContextValue {
   hasAttemptedClose: boolean;
   setHasAttemptedClose: (value: boolean) => void;
   height: keyof typeof heightClasses;
+  hasDescription: boolean;
+  setHasDescription: (value: boolean) => void;
 }
 
 const ModalContext = React.createContext<ModalContextValue | null>(null);
@@ -75,6 +77,7 @@ const useModalContext = () => {
 const widthClasses = {
   lg: "w-[80dvw]",
   md: "w-[60rem]",
+  "md-sm": "w-[40rem]",
   sm: "w-[32rem]",
 };
 
@@ -136,6 +139,7 @@ const ModalContent = React.forwardRef<
   ) => {
     const closeButtonRef = React.useRef<HTMLDivElement>(null);
     const [hasAttemptedClose, setHasAttemptedClose] = React.useState(false);
+    const [hasDescription, setHasDescription] = React.useState(false);
     const hasUserTypedRef = React.useRef(false);
 
     // Reset state when modal closes or opens
@@ -250,6 +254,8 @@ const ModalContent = React.forwardRef<
           hasAttemptedClose,
           setHasAttemptedClose,
           height,
+          hasDescription,
+          setHasDescription,
         }}
       >
         <DialogPrimitive.Portal>
@@ -292,6 +298,7 @@ const ModalContent = React.forwardRef<
             }}
             onEscapeKeyDown={handleInteractOutside}
             onPointerDownOutside={handleInteractOutside}
+            {...(!hasDescription && { "aria-describedby": undefined })}
             {...props}
           >
             {children}
@@ -329,7 +336,13 @@ interface ModalHeaderProps extends WithoutStyles<SectionProps> {
 }
 const ModalHeader = React.forwardRef<HTMLDivElement, ModalHeaderProps>(
   ({ icon: Icon, title, description, onClose, children, ...props }, ref) => {
-    const { closeButtonRef } = useModalContext();
+    const { closeButtonRef, setHasDescription } = useModalContext();
+
+    // useLayoutEffect ensures aria-describedby is set before paint,
+    // so screen readers announce the description when the dialog opens
+    React.useLayoutEffect(() => {
+      setHasDescription(!!description);
+    }, [description, setHasDescription]);
 
     return (
       <Section ref={ref} padding={1} alignItems="start" {...props}>
@@ -340,7 +353,15 @@ const ModalHeader = React.forwardRef<HTMLDivElement, ModalHeaderProps>(
             flexDirection="row"
             justifyContent="between"
           >
-            <Icon className="w-[1.5rem] h-[1.5rem] stroke-text-04" />
+            {/*
+              The `h-[1.5rem]` and `w-[1.5rem]` were added as backups here.
+              However, prop-resolution technically resolves to choosing classNames over size props, so technically the `size={24}` is the backup.
+              We specify both to be safe.
+
+              # Note
+              1.5rem === 24px
+            */}
+            <Icon className="stroke-text-04 h-[1.5rem] w-[1.5rem]" size={24} />
             {onClose && (
               <div
                 tabIndex={-1}
