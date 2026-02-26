@@ -187,7 +187,7 @@ export default function NewTeamModal() {
                   className="w-full"
                   rightIcon={SvgArrowRight}
                 >
-                  Try Onyx while waiting
+                  Try Chequers Capital while waiting
                 </Button>
               </div>
             </div>

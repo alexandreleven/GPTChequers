@@ -72,8 +72,8 @@ function Main() {
   const introSection = (
     <div className="flex flex-col items-start gap-4">
       <Text as="p">
-        API Keys allow you to access Onyx APIs programmatically. Click the
-        button below to generate a new API Key.
+        API Keys allow you to access Chequers Capital APIs programmatically.
+        Click the button below to generate a new API Key.
       </Text>
       <CreateButton onClick={() => setShowCreateUpdateForm(true)}>
         Create API Key

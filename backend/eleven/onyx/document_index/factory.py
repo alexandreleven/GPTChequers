@@ -3,6 +3,7 @@ import httpx
 from eleven.onyx.configs.app_configs import DOCUMENT_INDEX_TYPE
 from eleven.onyx.configs.constants import DocumentIndexType
 from eleven.onyx.document_index.elasticsearch.index import ElasticsearchIndex
+from onyx.configs.app_configs import ENABLE_OPENSEARCH_INDEXING_FOR_ONYX
 from onyx.configs.app_configs import ENABLE_OPENSEARCH_RETRIEVAL_FOR_ONYX
 from onyx.db.models import SearchSettings
 from onyx.document_index.interfaces import DocumentIndex
@@ -61,3 +62,59 @@ def _get_default_document_index(
         )
     else:
         raise ValueError(f"Invalid document index type: {DOCUMENT_INDEX_TYPE}")
+
+
+def _get_all_document_indices(
+    search_settings: SearchSettings,
+    secondary_search_settings: SearchSettings | None,
+    httpx_client: httpx.Client | None = None,
+) -> list[DocumentIndex]:
+    """Versioned override for startup index initialization.
+
+    Base Onyx always includes Vespa here; for Eleven Elasticsearch mode we need
+    startup to avoid touching local Vespa entirely.
+    """
+    secondary_index_name = (
+        secondary_search_settings.index_name if secondary_search_settings else None
+    )
+    secondary_large_chunks_enabled = (
+        secondary_search_settings.large_chunks_enabled
+        if secondary_search_settings
+        else None
+    )
+
+    if DOCUMENT_INDEX_TYPE == DocumentIndexType.ELASTICSEARCH.value:
+        return [
+            ElasticsearchIndex(
+                index_name=search_settings.index_name,
+                secondary_index_name=secondary_index_name,
+                large_chunks_enabled=search_settings.large_chunks_enabled,
+                secondary_large_chunks_enabled=secondary_large_chunks_enabled,
+                multitenant=MULTI_TENANT,
+            )
+        ]
+
+    vespa_document_index = VespaIndex(
+        index_name=search_settings.index_name,
+        secondary_index_name=secondary_index_name,
+        large_chunks_enabled=search_settings.large_chunks_enabled,
+        secondary_large_chunks_enabled=secondary_large_chunks_enabled,
+        multitenant=MULTI_TENANT,
+        httpx_client=httpx_client,
+    )
+
+    opensearch_document_index: OpenSearchOldDocumentIndex | None = None
+    if ENABLE_OPENSEARCH_INDEXING_FOR_ONYX:
+        opensearch_document_index = OpenSearchOldDocumentIndex(
+            index_name=search_settings.index_name,
+            secondary_index_name=None,
+            large_chunks_enabled=False,
+            secondary_large_chunks_enabled=None,
+            multitenant=MULTI_TENANT,
+            httpx_client=httpx_client,
+        )
+
+    indices: list[DocumentIndex] = [vespa_document_index]
+    if opensearch_document_index:
+        indices.append(opensearch_document_index)
+    return indices

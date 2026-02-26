@@ -190,7 +190,7 @@ export default function AgentCard({ agent }: AgentCardProps) {
             {/* Left side - creator and actions */}
             <div className="flex flex-col gap-1 py-1 px-2">
               <IconLabel icon={SvgUser}>
-                {agent.owner?.email || "Onyx"}
+                {agent.owner?.email || "Chequers Capital"}
               </IconLabel>
               <IconLabel icon={SvgActions}>
                 {agent.tools.length > 0

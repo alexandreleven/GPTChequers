@@ -267,7 +267,7 @@ export function TextFormField({
     heightString = "h-28";
   }
 
-  const [, , { setValue }] = useField(name);
+  const [field, , { setValue }] = useField(name);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -366,6 +366,7 @@ export function TextFormField({
           disabled={disabled}
           placeholder={placeholder}
           autoComplete={autoCompleteEnabled ? undefined : "off"}
+          value={field.value ?? ""}
         />
         {!isTextArea && isPasswordField && showPasswordToggle && (
           <button

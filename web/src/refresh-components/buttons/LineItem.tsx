@@ -53,6 +53,7 @@ export interface LineItemProps
   href?: string;
   ref?: React.Ref<HTMLButtonElement>;
   children: string;
+  rootElement?: "button" | "div";
 }
 
 /**
@@ -113,6 +114,7 @@ export default function LineItem({
   rightChildren,
   href,
   ref,
+  rootElement = "button",
   ...props
 }: LineItemProps) {
   // Determine variant (mutually exclusive, with priority order)
@@ -120,18 +122,14 @@ export default function LineItem({
 
   const emphasisKey = emphasized ? "emphasized" : "normal";
 
-  const content = (
-    <button
-      ref={ref}
-      className={cn(
-        "flex flex-row w-full items-start p-2 rounded-08 group/LineItem gap-2",
-        !!description ? "items-start" : "items-center",
-        buttonClassNames[variant][emphasisKey]
-      )}
-      type="button"
-      data-selected={selected}
-      {...props}
-    >
+  const baseClassName = cn(
+    "flex flex-row w-full items-start p-2 rounded-08 group/LineItem gap-2",
+    !!description ? "items-start" : "items-center",
+    buttonClassNames[variant][emphasisKey]
+  );
+
+  const contentChildren = (
+    <>
       {Icon && (
         <div
           className={cn(
@@ -162,8 +160,44 @@ export default function LineItem({
           </Truncated>
         )}
       </Section>
-    </button>
+    </>
   );
+
+  const content =
+    rootElement === "div" ? (
+      <div
+        ref={ref as React.Ref<HTMLDivElement>}
+        className={baseClassName}
+        {...(props as React.HTMLAttributes<HTMLDivElement>)}
+        role={props.onClick ? "button" : undefined}
+        tabIndex={props.onClick ? 0 : undefined}
+        data-selected={selected}
+        onKeyDown={(e) => {
+          props.onKeyDown?.(
+            e as unknown as React.KeyboardEvent<HTMLButtonElement>
+          );
+          if (e.defaultPrevented || !props.onClick) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            (props.onClick as React.MouseEventHandler<HTMLButtonElement>)(
+              e as unknown as React.MouseEvent<HTMLButtonElement>
+            );
+          }
+        }}
+      >
+        {contentChildren}
+      </div>
+    ) : (
+      <button
+        ref={ref}
+        className={baseClassName}
+        type="button"
+        data-selected={selected}
+        {...props}
+      >
+        {contentChildren}
+      </button>
+    );
 
   if (!href) return content;
   return <Link href={href as Route}>{content}</Link>;

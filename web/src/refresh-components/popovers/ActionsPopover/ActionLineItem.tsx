@@ -104,6 +104,7 @@ export default function ActionLineItem({
     <SimpleTooltip tooltip={tooltipText} className="max-w-[30rem]">
       <div data-testid={`tool-option-${toolName}`}>
         <LineItem
+          rootElement="div"
           onClick={() => {
             if (isSearchToolWithNoConnectors || isSearchToolWithNoDocumentSets)
               return;

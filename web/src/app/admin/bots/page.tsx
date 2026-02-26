@@ -38,8 +38,9 @@ const Main = () => {
       {/* {popup} */}
 
       <p className="mb-2 text-sm text-muted-foreground">
-        Setup Slack bots that connect to Onyx. Once setup, you will be able to
-        ask questions to Onyx directly from Slack. Additionally, you can:
+        Setup Slack bots that connect to Chequers Capital. Once setup, you will
+        be able to ask questions to Chequers Capital directly from Slack.
+        Additionally, you can:
       </p>
 
       <div className="mb-2">
@@ -67,7 +68,7 @@ const Main = () => {
         >
           guide{" "}
         </a>
-        found in the Onyx documentation to get started!
+        found in the Chequers Capital documentation to get started!
       </p>
 
       <CreateButton href="/admin/bots/new">New Slack Bot</CreateButton>

@@ -71,9 +71,9 @@ function Main() {
           <div className="flex flex-col gap-2">
             <Text as="p" mainContentBody text04 className="leading-relaxed">
               Unstructured extracts and transforms complex data from formats
-              like .pdf, .docx, .png, .pptx, etc. into clean text for Onyx to
-              ingest. Provide an API key to enable Unstructured document
-              processing.
+              like .pdf, .docx, .png, .pptx, etc. into clean text for Chequers
+              Capital to ingest. Provide an API key to enable Unstructured
+              document processing.
             </Text>
             <Text as="p" mainContentMuted text03>
               <span className="font-main-ui-action text-text-03">Note:</span>{" "}

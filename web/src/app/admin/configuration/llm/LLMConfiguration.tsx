@@ -58,7 +58,7 @@ export function LLMConfiguration() {
         </>
       ) : (
         <Callout type="warning" title="No LLM providers configured yet">
-          Please set one up below in order to start using Onyx!
+          Please set one up below in order to start using Chequers Capital!
         </Callout>
       )}
 

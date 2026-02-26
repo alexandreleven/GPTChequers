@@ -342,7 +342,7 @@ export default function Page() {
       if (providerType === "onyx_web_crawler") {
         return {
           id: -1,
-          name: "Onyx Web Crawler",
+          name: "Chequers Capital Web Crawler",
           provider_type: "onyx_web_crawler",
           is_active: true,
           config: null,

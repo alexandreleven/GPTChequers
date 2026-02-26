@@ -10,6 +10,8 @@ export enum AuthType {
 export const HOST_URL = process.env.WEB_DOMAIN || "http://localhost:3000";
 
 export const INTERNAL_URL = process.env.INTERNAL_URL || "http://localhost:8080";
+export const BRAND_WEBSITE_URL =
+  process.env.NEXT_PUBLIC_BRAND_WEBSITE_URL || HOST_URL;
 
 // Documentation URLs
 export const DOCS_BASE_URL = "https://docs.onyx.app";
@@ -139,8 +141,10 @@ export const MAX_FILES_TO_SHOW = 3;
 export const MOBILE_SIDEBAR_BREAKPOINT_PX = 640;
 export const DEFAULT_AGENT_AVATAR_SIZE_PX = 18;
 export const HORIZON_DISTANCE_PX = 800;
-export const LOGO_FOLDED_SIZE_PX = 24;
-export const LOGO_UNFOLDED_SIZE_PX = 88;
+export const LOGO_FOLDED_SIZE_PX = 30;
+export const LOGO_UNFOLDED_SIZE_PX = 108;
+export const LOGOTYPE_UNFOLDED_WIDTH_PX = 120; //
+export const LOGO_ROW_GAP_PX = 18; // Gap between the logo and the logotype on the top left
 
 export const DEFAULT_CONTEXT_TOKENS = 120_000;
 export const MAX_CHUNKS_FED_TO_CHAT = 25;

@@ -131,7 +131,7 @@ export default function Page() {
       <SettingsLayouts.Header
         icon={SvgDiscordMono}
         title="Discord Bots"
-        description="Connect Onyx to your Discord servers. Users can ask questions directly in Discord channels."
+        description="Connect Chequers Capital to your Discord servers. Users can ask questions directly in Discord channels."
       />
       <SettingsLayouts.Body>
         <DiscordBotContent />

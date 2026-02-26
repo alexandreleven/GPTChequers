@@ -1,5 +1,5 @@
 /**
- * API Service - Handles all communication with Onyx backend
+ * API Service - Handles all communication with Chequers Capital backend
  */
 
 import {

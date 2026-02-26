@@ -1,5 +1,5 @@
 /**
- * Onyx Chat Widget - Entry Point
+ * Chequers Capital Chat Widget - Entry Point
  * Exports the main web component
  */
 

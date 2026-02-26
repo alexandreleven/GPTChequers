@@ -59,9 +59,9 @@ export function ChatPopup() {
   const logoDisplayStyle = enterpriseSettings?.logo_display_style;
 
   // Header icon rules:
-  // - If neither app name nor custom logo exists -> show Onyx icon
+  // - If neither app name nor custom logo exists -> show Chequers Capital icon
   // - If logo display is "name_only" -> show alert icon
-  // - Otherwise -> show uploaded custom logo (fallback to Onyx icon)
+  // - Otherwise -> show uploaded custom logo (fallback to Chequers Capital icon)
   const headerIcon =
     !hasApplicationName && !hasCustomLogo
       ? (props: IconProps) => <OnyxIcon size={24} {...props} />
@@ -76,7 +76,7 @@ export function ChatPopup() {
       <Modal.Content width="sm" height="lg">
         <Modal.Header
           icon={headerIcon}
-          title={popupTitle || "Welcome to Onyx!"}
+          title={popupTitle || "Welcome to Chequers Capital!"}
         />
         <Modal.Body>
           <div className="overflow-y-auto text-left">

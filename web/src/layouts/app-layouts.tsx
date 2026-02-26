@@ -28,6 +28,7 @@
 
 "use client";
 
+import { BRAND_WEBSITE_URL } from "@/lib/constants";
 import { cn, ensureHrefProtocol } from "@/lib/utils";
 import type { Components } from "react-markdown";
 import Text from "@/refresh-components/texts/Text";
@@ -111,12 +112,14 @@ function AppHeader() {
 
 function Footer() {
   const settings = useSettingsContext();
+  const appName =
+    settings?.enterpriseSettings?.application_name || "Chequers Capital";
 
   const customFooterContent =
     settings?.enterpriseSettings?.custom_lower_disclaimer_content ||
-    `[Onyx ${
+    `[${appName} ${
       settings?.webVersion || "dev"
-    }](https://www.onyx.app/) - Open Source AI Platform`;
+    }](${BRAND_WEBSITE_URL}) - Open Source AI Platform`;
 
   return (
     <footer className="w-full flex flex-row justify-center items-center gap-2 pb-2 mt-auto">

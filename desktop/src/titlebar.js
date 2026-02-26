@@ -1,5 +1,5 @@
-// Custom title bar for Onyx Desktop
-// This script injects a draggable title bar that matches Onyx design system
+// Custom title bar for Chequers Capital Desktop
+// This script injects a draggable title bar that matches Chequers Capital design system
 
 (function () {
   const TITLEBAR_ID = "onyx-desktop-titlebar";
@@ -156,7 +156,7 @@
     const bodyHasDark = document.body?.classList.contains("dark");
     const isDark = htmlHasDark || bodyHasDark;
 
-    // Apply styles matching Onyx design system with translucent glass effect
+    // Apply styles matching Chequers Capital design system with translucent glass effect
     titleBar.style.cssText = `
       position: fixed;
       top: 0;

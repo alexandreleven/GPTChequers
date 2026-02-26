@@ -785,20 +785,27 @@ class SharepointConnector(
 
             lower_parts = [part.lower() for part in parts]
             site_type_index = None
-            for site_token in ("sites", "teams"):
+            for site_token in ("sites", "teams", "engagements", "personal"):
                 if site_token in lower_parts:
                     site_type_index = lower_parts.index(site_token)
                     break
 
             if site_type_index is not None and len(parts) > site_type_index + 1:
-                site_path = parts[: site_type_index + 2]
-                remaining_parts = parts[site_type_index + 2 :]
+                site_token = lower_parts[site_type_index]
+                if site_token == "engagements":
+                    site_path = parts[: site_type_index + 1]
+                    remaining_parts = parts[site_type_index + 1 :]
+                else:
+                    site_path = parts[: site_type_index + 2]
+                    remaining_parts = parts[site_type_index + 2 :]
                 site_url = f"{base_url}/" + "/".join(site_path)
             else:
                 # Handle custom managed paths (e.g., /projects, etc.)
                 # Assume the first segment is the site, rest is drive/folder
                 logger.info(
-                    f"Site URL '{url}' uses custom managed path (not /sites/ or /teams/)"
+                    "Site URL '%s' uses custom managed path "
+                    "(not /sites/, /teams/, /engagements/, or /personal/)",
+                    url,
                 )
                 site_path = parts[:1]  # First segment is the site
                 remaining_parts = parts[1:]  # Rest is drive/folder
@@ -1282,7 +1289,17 @@ class SharepointConnector(
             return token
 
         self._graph_client = GraphClient(_acquire_token_for_graph)
-        if auth_method == SharepointAuthMethod.CERTIFICATE.value:
+        # Needed for SharePoint REST token acquisition later in indexing.
+        # Prefer deriving from configured site URLs (no extra Graph organization permission required).
+        self.sp_tenant_domain = None
+        for site_url in self.sites:
+            parsed = urlsplit(site_url)
+            if parsed.netloc and parsed.netloc.endswith(".sharepoint.com"):
+                self.sp_tenant_domain = parsed.netloc.split(".sharepoint.com")[0]
+                break
+
+        # Fallback to Graph org lookup if site URLs are unavailable/unparseable.
+        if not self.sp_tenant_domain:
             org = self.graph_client.organization.get().execute_query()
             if not org or len(org) == 0:
                 raise ConnectorValidationError("No organization found")

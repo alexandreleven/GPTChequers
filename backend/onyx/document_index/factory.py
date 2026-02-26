@@ -69,7 +69,7 @@ def get_default_document_index(
     )
 
 
-def get_all_document_indices(
+def _get_all_document_indices(
     search_settings: SearchSettings,
     secondary_search_settings: SearchSettings | None,
     httpx_client: httpx.Client | None = None,
@@ -114,3 +114,18 @@ def get_all_document_indices(
     if opensearch_document_index:
         result.append(opensearch_document_index)
     return result
+
+
+def get_all_document_indices(
+    search_settings: SearchSettings,
+    secondary_search_settings: SearchSettings | None,
+    httpx_client: httpx.Client | None = None,
+) -> list[DocumentIndex]:
+    get_all_document_indices_fn = fetch_versioned_implementation(
+        "onyx.document_index.factory", "_get_all_document_indices"
+    )
+    return get_all_document_indices_fn(
+        search_settings,
+        secondary_search_settings,
+        httpx_client,
+    )
