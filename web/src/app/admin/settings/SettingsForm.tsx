@@ -275,7 +275,7 @@ export function SettingsForm() {
       />
       <Checkbox
         label="Anonymous Users"
-        sublabel="If set, users will not be required to sign in to use Onyx."
+        sublabel="If set, users will not be required to sign in to use Chequers Capital."
         checked={settings.anonymous_user_enabled}
         onChange={(e) =>
           handleToggleSettingsField("anonymous_user_enabled", e.target.checked)
@@ -317,7 +317,7 @@ export function SettingsForm() {
             <Modal.Body>
               <p>
                 Are you sure you want to enable anonymous users? This will allow
-                anyone to use Onyx without signing in.
+                anyone to use Chequers Capital without signing in.
               </p>
             </Modal.Body>
             <Modal.Footer>
@@ -334,7 +334,7 @@ export function SettingsForm() {
           <Title className="mt-8 mb-4">Chat Settings</Title>
           <IntegerInput
             label="Chat Retention"
-            sublabel="Enter the maximum number of days you would like Onyx to retain chat messages. Leaving this field empty will cause Onyx to never delete chat messages."
+            sublabel="Enter the maximum number of days you would like Chequers Capital to retain chat messages. Leaving this field empty will cause Chequers Capital to never delete chat messages."
             value={chatRetention === "" ? null : Number(chatRetention)}
             onChange={(e) => {
               const numValue = parseInt(e.target.value, 10);

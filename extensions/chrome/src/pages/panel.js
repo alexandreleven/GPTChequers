@@ -28,7 +28,10 @@ import {
         await chrome.storage.session.remove("pendingInput");
       }
     } catch (error) {
-      console.error("[Onyx Panel] Error checking pending input:", error);
+      console.error(
+        "[Chequers Capital Panel] Error checking pending input:",
+        error,
+      );
     }
     return false;
   }
@@ -106,7 +109,7 @@ import {
         "",
       );
     } else {
-      console.warn("Onyx domain not found, using default");
+      console.warn("Chequers Capital domain not found, using default");
       const domain = await getOnyxDomain();
       setIframeSrc(domain + SIDE_PANEL_PATH, "");
     }

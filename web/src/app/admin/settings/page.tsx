@@ -11,7 +11,8 @@ export default function Page() {
       <AdminPageTitle title="Workspace Settings" icon={SvgSettings} />
 
       <Text className="mb-8">
-        Manage general Onyx settings applicable to all users in the workspace.
+        Manage general Chequers Capital settings applicable to all users in the
+        workspace.
       </Text>
 
       <SettingsForm />

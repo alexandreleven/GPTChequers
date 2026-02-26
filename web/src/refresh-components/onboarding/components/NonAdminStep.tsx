@@ -71,7 +71,7 @@ export default function NonAdminStep() {
             </div>
             <div>
               <Text as="p" text04 mainUiAction>
-                What should Onyx call you?
+                What should Chequers Capital call you?
               </Text>
               <Text as="p" text03 secondaryBody>
                 We will display this name in the app.

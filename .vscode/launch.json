@@ -84,9 +84,9 @@
       "name": "Web Server",
       "type": "node",
       "request": "launch",
-      "cwd": "${workspaceRoot}/web",
-      "runtimeExecutable": "npm",
-      "envFile": "${workspaceFolder}/.vscode/.env",
+      "cwd": "${workspaceRoot}/web",  
+      // "envFile": "${workspaceFolder}/.vscode/.env",      // Overload the front to delete
+      "runtimeExecutable": "npm",  
       "runtimeArgs": ["run", "dev"],
       "presentation": {
         "group": "2"

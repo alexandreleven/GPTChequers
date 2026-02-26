@@ -1339,10 +1339,10 @@ export default function AgentEditorPage({
                                   )}
                                   {hasProcessingFiles && (
                                     <Text as="p" text03 secondaryBody>
-                                      Onyx is still processing your uploaded
-                                      files. You can create the agent now, but
-                                      it will not have access to all files until
-                                      processing completes.
+                                      Chequers Capital is still processing your
+                                      uploaded files. You can create the agent
+                                      now, but it will not have access to all
+                                      files until processing completes.
                                     </Text>
                                   )}
                                 </GeneralLayouts.Section>

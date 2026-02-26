@@ -68,15 +68,16 @@ export default function AccessRestricted() {
       </div>
 
       <Text text03>
-        Your access to Onyx has been temporarily suspended due to a lapse in
-        your subscription.
+        Your access to Chequers Capital has been temporarily suspended due to a
+        lapse in your subscription.
       </Text>
 
       {NEXT_PUBLIC_CLOUD_ENABLED ? (
         <>
           <Text text03>
-            To reinstate your access and continue benefiting from Onyx&apos;s
-            powerful features, please update your payment information.
+            To reinstate your access and continue benefiting from Chequers
+            Capital&apos;s powerful features, please update your payment
+            information.
           </Text>
 
           <Text text03>
@@ -105,8 +106,8 @@ export default function AccessRestricted() {
       ) : (
         <>
           <Text text03>
-            To reinstate your access and continue using Onyx, please contact
-            your system administrator to renew your license.
+            To reinstate your access and continue using Chequers Capital, please
+            contact your system administrator to renew your license.
           </Text>
 
           <Text text03>

@@ -37,7 +37,7 @@ export function CredentialFieldsRenderer({
     templateWithAuth.authMethods?.forEach((m) => {
       if (m.value !== newMethod) {
         Object.keys(m.fields).forEach((fieldKey) => {
-          delete cleaned[fieldKey];
+          cleaned[fieldKey] = "";
         });
       }
     });

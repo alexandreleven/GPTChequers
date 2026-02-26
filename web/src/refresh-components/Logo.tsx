@@ -1,11 +1,11 @@
 "use client";
 
-import { OnyxIcon, OnyxLogoTypeIcon } from "@/components/icons/icons";
 import { useSettingsContext } from "@/components/settings/SettingsProvider";
 import Image from "next/image";
 import {
   LOGO_FOLDED_SIZE_PX,
-  LOGO_UNFOLDED_SIZE_PX,
+  LOGOTYPE_UNFOLDED_WIDTH_PX,
+  LOGO_ROW_GAP_PX,
   NEXT_PUBLIC_DO_NOT_USE_TOGGLE_OFF_DANSWER_POWERED,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -16,51 +16,78 @@ import { useMemo } from "react";
 export interface LogoProps {
   folded?: boolean;
   size?: number;
+  logotypeWidth?: number;
   className?: string;
 }
 
-export default function Logo({ folded, size, className }: LogoProps) {
+export default function Logo({
+  folded,
+  size,
+  logotypeWidth,
+  className,
+}: LogoProps) {
   const foldedSize = size ?? LOGO_FOLDED_SIZE_PX;
-  const unfoldedSize = size ?? LOGO_UNFOLDED_SIZE_PX;
+  const unfoldedLogotypeWidth = logotypeWidth ?? LOGOTYPE_UNFOLDED_WIDTH_PX;
+  const logoRowGapPx = LOGO_ROW_GAP_PX;
+  const unfoldedLogotypeHeight = Math.max(
+    16,
+    Math.round(unfoldedLogotypeWidth / 3.6)
+  );
   const settings = useSettingsContext();
   const logoDisplayStyle = settings.enterpriseSettings?.logo_display_style;
   const applicationName = settings.enterpriseSettings?.application_name;
+  const useCustomLogo = settings.enterpriseSettings?.use_custom_logo;
+  const logoSrc = useCustomLogo ? "/api/enterprise-settings/logo" : "/logo.png";
 
   const logo = useMemo(
-    () =>
-      settings.enterpriseSettings?.use_custom_logo ? (
-        <div
+    () => (
+      <div
+        className={cn(
+          "aspect-square overflow-hidden relative flex-shrink-0",
+          useCustomLogo && "rounded-full",
+          className
+        )}
+        style={{ height: foldedSize, width: foldedSize }}
+      >
+        <Image
+          alt="Logo"
+          src={logoSrc}
+          fill
           className={cn(
-            "aspect-square rounded-full overflow-hidden relative flex-shrink-0",
-            className
+            "object-center",
+            useCustomLogo ? "object-cover" : "object-contain"
           )}
-          style={{ height: foldedSize, width: foldedSize }}
-        >
-          <Image
-            alt="Logo"
-            src="/api/enterprise-settings/logo"
-            fill
-            className="object-cover object-center"
-            sizes={`${foldedSize}px`}
-          />
-        </div>
-      ) : (
-        <OnyxIcon
-          size={foldedSize}
-          className={cn("flex-shrink-0", className)}
+          sizes={`${foldedSize}px`}
         />
-      ),
-    [className, foldedSize, settings.enterpriseSettings?.use_custom_logo]
+      </div>
+    ),
+    [className, foldedSize, logoSrc, useCustomLogo]
+  );
+
+  const logotype = (
+    <Image
+      alt="Logotype"
+      src="/logotype.png"
+      width={unfoldedLogotypeWidth}
+      height={unfoldedLogotypeHeight}
+      className={cn("h-auto object-contain object-left", className)}
+      sizes={`${unfoldedLogotypeWidth}px`}
+    />
   );
 
   const renderNameAndPoweredBy = (opts: {
     includeLogo: boolean;
     includeName: boolean;
+    includeLogotype: boolean;
   }) => {
     return (
       <div className="flex flex-col min-w-0">
-        <div className="flex flex-row items-center gap-2 min-w-0">
+        <div
+          className="flex flex-row items-center min-w-0"
+          style={{ columnGap: `${logoRowGapPx}px` }}
+        >
           {opts.includeLogo && logo}
+          {opts.includeLogotype && !folded && logotype}
           {opts.includeName && !folded && (
             <div className="flex-1 min-w-0">
               <Truncated headingH3>{applicationName}</Truncated>
@@ -73,12 +100,12 @@ export default function Logo({ folded, size, className }: LogoProps) {
             text03
             className={cn(
               "line-clamp-1 truncate",
-              opts.includeLogo && opts.includeName && "ml-[33px]"
+              opts.includeLogo &&
+                (opts.includeName || opts.includeLogotype) &&
+                "ml-[33px]"
             )}
             nowrap
-          >
-            Powered by Onyx
-          </Text>
+          ></Text>
         )}
       </div>
     );
@@ -86,20 +113,30 @@ export default function Logo({ folded, size, className }: LogoProps) {
 
   // Handle "logo_only" display style
   if (logoDisplayStyle === "logo_only") {
-    return renderNameAndPoweredBy({ includeLogo: true, includeName: false });
+    return renderNameAndPoweredBy({
+      includeLogo: true,
+      includeName: false,
+      includeLogotype: false,
+    });
   }
 
   // Handle "name_only" display style
   if (logoDisplayStyle === "name_only") {
-    return renderNameAndPoweredBy({ includeLogo: false, includeName: true });
+    return renderNameAndPoweredBy({
+      includeLogo: false,
+      includeName: true,
+      includeLogotype: false,
+    });
   }
 
-  // Handle "logo_and_name" or default behavior
-  return applicationName ? (
-    renderNameAndPoweredBy({ includeLogo: true, includeName: true })
-  ) : folded ? (
-    <OnyxIcon size={foldedSize} className={cn("flex-shrink-0", className)} />
-  ) : (
-    <OnyxLogoTypeIcon size={unfoldedSize} className={className} />
-  );
+  // Default behavior in unfolded state: logo + logotype aligned to the left.
+  if (folded) {
+    return logo;
+  }
+
+  return renderNameAndPoweredBy({
+    includeLogo: true,
+    includeName: false,
+    includeLogotype: true,
+  });
 }

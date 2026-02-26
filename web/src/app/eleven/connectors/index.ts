@@ -3,7 +3,7 @@
  *
  * This file serves as the single entry point for all Eleven Edition
  * custom connectors. It exports metadata, configurations, and credentials
- * that will be merged into the main Onyx system.
+ * that will be merged into the main Chequers Capital system.
  */
 
 export { ELEVEN_SOURCE_METADATA } from "./metadata";

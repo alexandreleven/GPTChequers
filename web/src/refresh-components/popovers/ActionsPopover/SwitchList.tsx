@@ -96,6 +96,7 @@ export default function SwitchList({
               className="max-w-[30rem]"
             >
               <LineItem
+                rootElement="div"
                 icon={
                   item.leading
                     ? ((() =>

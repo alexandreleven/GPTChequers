@@ -6,7 +6,10 @@ import { SearchAndFilterControls } from "./SearchAndFilterControls";
 import { AdminPageTitle } from "@/components/admin/Title";
 import Link from "next/link";
 import Text from "@/components/ui/text";
-import { useConnectorIndexingStatusWithPagination } from "@/lib/hooks";
+import {
+  useConnectorIndexingStatusWithPagination,
+  useConnectorStatus,
+} from "@/lib/hooks";
 import { usePopupFromQuery } from "@/components/popup/PopupFromQuery";
 import Button from "@/refresh-components/buttons/Button";
 import { useState, useRef, useMemo, RefObject } from "react";
@@ -66,6 +69,8 @@ function Main() {
     sourceLoadingStates,
     resetPagination,
   } = useConnectorIndexingStatusWithPagination(request, 30000);
+  const { data: connectorStatuses, isLoading: isLoadingConnectorStatuses } =
+    useConnectorStatus(30000);
 
   // Check if filters are active
   const hasActiveFilters = useMemo(() => {
@@ -148,9 +153,50 @@ function Main() {
 
   if (ccPairsIndexingStatusesError) {
     return (
-      <div className="text-error">
-        {ccPairsIndexingStatusesError?.info?.detail ||
-          "Error loading indexing status."}
+      <div className="mt-4 space-y-3">
+        <div className="text-error">
+          {ccPairsIndexingStatusesError?.info?.detail ||
+            "Error loading indexing status."}
+        </div>
+        <Text>
+          Connector indexing stats could not be loaded. The connectors may still
+          exist and be configured.
+        </Text>
+        {isLoadingConnectorStatuses ? (
+          <ConnectorStaggeredSkeleton rowCount={4} standalone={true} />
+        ) : connectorStatuses && connectorStatuses.length > 0 ? (
+          <div className="rounded-12 border border-border p-3">
+            <Text className="mb-2">Fallback list (without indexing stats)</Text>
+            <div className="space-y-2">
+              {connectorStatuses.map((status) => (
+                <div
+                  key={status.cc_pair_id}
+                  className="flex items-center justify-between rounded-08 border border-border-subtle p-2"
+                >
+                  <div className="min-w-0">
+                    <Text className="truncate">
+                      {status.name ||
+                        status.connector?.name ||
+                        "Unnamed connector"}
+                    </Text>
+                    <Text className="text-text-weak text-xs">
+                      {status.connector?.source || "unknown"} · cc_pair_id{" "}
+                      {status.cc_pair_id}
+                    </Text>
+                  </div>
+                  <Button href={`/admin/connector/${status.cc_pair_id}`}>
+                    Open
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <Text>
+            No connectors found in fallback endpoint. Try reloading after
+            backend restart.
+          </Text>
+        )}
       </div>
     );
   }
