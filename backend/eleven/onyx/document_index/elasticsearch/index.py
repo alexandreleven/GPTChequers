@@ -584,6 +584,39 @@ class ElasticsearchIndex(OldDocumentIndex):
             }
         }
 
+        if not ELASTIC_ENTERPRISE_LICENSE:
+            logger.info("Using rescoring instead of RRF due to license restrictions")
+ 
+            params = {
+                "index": self.index_name,
+                "size": num_to_retrieve,
+                "from": offset,
+                "_source": {"excludes": ["vector"]},
+                "query": {
+                    "bool": {
+                        "must": [text_query],
+                        "filter": filter_clauses,
+                    }
+                }
+            }
+ 
+            if query_embedding is not None and len(query_embedding) > 0:
+                params["rescore"] = {
+                    "window_size": num_to_retrieve * 2,
+                    "query": {
+                        "rescore_query": {
+                            "knn": {
+                                "field": EMBEDDINGS,
+                                "query_vector": query_embedding,
+                                "k": num_to_retrieve,
+                                "num_candidates": num_candidates,
+                            }
+                        },
+                        "query_weight": 1.0,
+                        "rescore_query_weight": 1.0,
+                    },
+                }
+
         standard_retriever = {
             "standard": {
                 "query": {

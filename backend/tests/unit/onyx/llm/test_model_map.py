@@ -98,3 +98,4 @@ def test_twelvelabs_pegasus_override_present() -> None:
         assert model_obj["supports_reasoning"] is False
     finally:
         get_model_map.cache_clear()
+

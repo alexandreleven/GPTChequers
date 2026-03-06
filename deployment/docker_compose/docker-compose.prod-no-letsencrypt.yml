@@ -273,7 +273,7 @@ services:
     # in order to make this work on both Unix-like systems and windows
     command: >
       /bin/sh -c "dos2unix /etc/nginx/conf.d/run-nginx.sh
-      && /etc/nginx/conf.d/run-nginx.sh app.conf.template.prod.no-letsencrypt"
+      && /etc/nginx/conf.d/run-nginx.sh app.conf.template.no-letsencrypt"
     env_file:
       - .env.nginx
     environment:

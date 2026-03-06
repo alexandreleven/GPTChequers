@@ -300,7 +300,10 @@ class LitellmLLM(LLM):
             self.config.model_provider, self.config.model_name
         )
         is_ollama = self._model_provider == LlmProviderNames.OLLAMA_CHAT
-        is_mistral = self._model_provider == LlmProviderNames.MISTRAL
+        is_mistral = self._model_provider == LlmProviderNames.MISTRAL or (
+            self._model_provider == "azure_ai"
+            and "mistral" in self._model_version.lower()
+        )
         is_vertex_ai = self._model_provider == LlmProviderNames.VERTEX_AI
         # Vertex Anthropic Opus 4.5 rejects output_config (LiteLLM maps reasoning_effort).
         # Keep this guard until LiteLLM/Vertex accept the field for this model.
@@ -334,10 +337,15 @@ class LitellmLLM(LLM):
         if not tools:
             tool_choice = None
 
+        # Mistral models (direct or via Azure AI) do not accept tool_choice
+        # in OpenAI object format — drop it entirely to avoid 400 errors
+        if is_mistral:
+            tool_choice = None
+
         # Temperature
         temperature = 1 if is_reasoning else self._temperature
 
-        if stream and not is_vertex_opus_4_5:
+        if stream and not is_vertex_opus_4_5 and not is_mistral:
             optional_kwargs["stream_options"] = {"include_usage": True}
 
         # Use configured default if not provided (if not set in env, low)

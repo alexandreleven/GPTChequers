@@ -390,6 +390,11 @@ def _strip_colon_from_model_name(model_name: str) -> str:
     return ":".join(model_name.split(":")[:-1]) if ":" in model_name else model_name
 
 
+def _get_provider_aliases(provider: str) -> list[str]:
+    """Return a list of provider name variants to try when looking up a model in LiteLLM."""
+    return [provider]
+
+
 def find_model_obj(model_map: dict, provider: str, model_name: str) -> dict | None:
     stripped_model_name = _strip_extra_provider_from_model_name(model_name)
 
@@ -406,11 +411,12 @@ def find_model_obj(model_map: dict, provider: str, model_name: str) -> dict | No
     # Filter out None values and deduplicate model names
     filtered_model_names = [name for name in model_names if name]
 
-    # First try all model names with provider prefix
-    for model_name in filtered_model_names:
-        model_obj = model_map.get(f"{provider}/{model_name}")
-        if model_obj:
-            return model_obj
+    # First try all model names with provider prefix (including known provider aliases)
+    for provider_name in _get_provider_aliases(provider):
+        for model_name in filtered_model_names:
+            model_obj = model_map.get(f"{provider_name}/{model_name}")
+            if model_obj:
+                return model_obj
 
     # Then try all model names without provider prefix
     for model_name in filtered_model_names:

@@ -70,6 +70,7 @@ SHARED_DOCUMENTS_MAP = {
     "Documents": "Shared Documents",
     "Dokumente": "Freigegebene Dokumente",
     "Documentos": "Documentos compartidos",
+    "Documents partages": "Shared Documents",  # French (normalized to English canonical)
 }
 SHARED_DOCUMENTS_MAP_REVERSE = {v: k for k, v in SHARED_DOCUMENTS_MAP.items()}
 
@@ -696,6 +697,7 @@ class SharepointConnector(
         sites: list[str] = [],
         include_site_pages: bool = True,
         include_site_documents: bool = True,
+        excluded_folder_names: list[str] = [],
     ) -> None:
         self.batch_size = batch_size
         self.sites = list(sites)
@@ -706,6 +708,7 @@ class SharepointConnector(
         self.msal_app: msal.ConfidentialClientApplication | None = None
         self.include_site_pages = include_site_pages
         self.include_site_documents = include_site_documents
+        self.excluded_folder_names = list(excluded_folder_names)
         self.sp_tenant_domain: str | None = None
 
     def validate_connector_settings(self) -> None:
@@ -852,6 +855,15 @@ class SharepointConnector(
                     drive.name in SHARED_DOCUMENTS_MAP
                     and SHARED_DOCUMENTS_MAP[drive.name] == drive_name
                 )
+                or (
+                    # Cross-language: user typed an API name from another locale
+                    # (e.g. "Documents partages") while the API returns another locale's
+                    # API name (e.g. "Documents"). Both map to the same canonical display.
+                    drive_name in SHARED_DOCUMENTS_MAP
+                    and drive.name in SHARED_DOCUMENTS_MAP
+                    and SHARED_DOCUMENTS_MAP[drive.name]
+                    == SHARED_DOCUMENTS_MAP[drive_name]
+                )
             ]
             drive = drives[0] if len(drives) > 0 else None
             if drive is None:
@@ -900,6 +912,33 @@ class SharepointConnector(
                         )
                     logger.info(
                         f"Found {len(driveitems)} items in drive '{drive_name}' for the folder '{site_descriptor.folder_path}'"
+                    )
+
+                # Filter out items inside excluded folder names (at any depth)
+                if self.excluded_folder_names:
+                    excluded_set = set(self.excluded_folder_names)
+
+                    def _in_excluded_folder_gdifdn(item: DriveItem) -> bool:
+                        if (
+                            not item.parent_reference.path
+                            or "root:/" not in item.parent_reference.path
+                        ):
+                            return False
+                        folder_part = item.parent_reference.path.split("root:/")[1]
+                        return any(
+                            segment in excluded_set
+                            for segment in folder_part.split("/")
+                        )
+
+                    before_count = len(driveitems)
+                    driveitems = [
+                        item
+                        for item in driveitems
+                        if not _in_excluded_folder_gdifdn(item)
+                    ]
+                    logger.info(
+                        f"Excluded {before_count - len(driveitems)} items inside "
+                        f"folders {self.excluded_folder_names} in drive '{drive_name}'"
                     )
 
                 # Filter items based on time window if specified
@@ -962,8 +1001,16 @@ class SharepointConnector(
                         and SHARED_DOCUMENTS_MAP[drive.name]
                         == site_descriptor.drive_name
                     )
-                ]  # NOTE: right now we only support english, german and spanish drive names
-                # add to SHARED_DOCUMENTS_MAP if you want to support more languages
+                    or (
+                        # Cross-language: user typed an API name from another locale
+                        # (e.g. "Documents partages") while the API returns another locale's
+                        # API name (e.g. "Documents"). Both map to the same canonical display.
+                        site_descriptor.drive_name in SHARED_DOCUMENTS_MAP
+                        and drive.name in SHARED_DOCUMENTS_MAP
+                        and SHARED_DOCUMENTS_MAP[drive.name]
+                        == SHARED_DOCUMENTS_MAP[site_descriptor.drive_name]
+                    )
+                ]  # NOTE: add entries to SHARED_DOCUMENTS_MAP to support more languages
                 if not drives:
                     logger.warning(f"Drive '{site_descriptor.drive_name}' not found")
                     return []
@@ -1022,6 +1069,33 @@ class SharepointConnector(
                                 f"Nothing found for folder '{site_descriptor.folder_path}' "
                                 f"in; any of valid paths: {all_paths}"
                             )
+
+                    # Filter out items inside excluded folder names (at any depth)
+                    if self.excluded_folder_names:
+                        excluded_set = set(self.excluded_folder_names)
+
+                        def _in_excluded_folder(item: DriveItem) -> bool:
+                            if (
+                                not item.parent_reference.path
+                                or "root:/" not in item.parent_reference.path
+                            ):
+                                return False
+                            folder_part = item.parent_reference.path.split("root:/")[1]
+                            return any(
+                                segment in excluded_set
+                                for segment in folder_part.split("/")
+                            )
+
+                        before_count = len(driveitems)
+                        driveitems = [
+                            item
+                            for item in driveitems
+                            if not _in_excluded_folder(item)
+                        ]
+                        logger.info(
+                            f"Excluded {before_count - len(driveitems)} items inside "
+                            f"folders {self.excluded_folder_names} in drive '{drive.name}'"
+                        )
 
                     # Filter items based on time window if specified
                     if start is not None and end is not None:

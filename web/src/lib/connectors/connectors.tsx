@@ -854,6 +854,15 @@ const baseConnectorConfigs: Record<
         description:
           "Index aspx-pages of all SharePoint sites defined above, even if a library or folder is specified.",
       },
+      {
+        type: "list",
+        query: "Excluded Folder Names:",
+        label: "Excluded Folder Names",
+        name: "excluded_folder_names",
+        optional: true,
+        description:
+          "Folder names to exclude from indexing (at any depth). For example, adding 'Others' will skip all folders named 'Others' across all sites and libraries.",
+      },
     ],
   },
   teams: {
