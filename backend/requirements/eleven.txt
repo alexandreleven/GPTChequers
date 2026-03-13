@@ -302,7 +302,7 @@ pyjwt==2.10.1
     # via msal
 pymupdf==1.26.7
     # via onyx
-python-dateutil==2.8.2
+python-dateutil==2.9.0.post0
     # via
     #   aiobotocore
     #   botocore
