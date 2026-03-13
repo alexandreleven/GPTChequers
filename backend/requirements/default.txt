@@ -86,7 +86,7 @@ boto3==1.39.11
     #   aiobotocore
     #   cohere
     #   onyx
-boto3-stubs==1.39.11
+boto3-stubs==1.42.52
     # via onyx
 botocore==1.39.11
     # via
